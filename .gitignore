@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/*
+*.log
+
+# Generated pipeline packages
+pipelines/compiled/*.yaml
+pipelines/compiled/*.json
+
+# Docker
+*.tar
+
+# Dataset/model
+data/
+datasets/
+*.zip
+*.keras
+*.h5
+
+# IDE
+.vscode/
+.idea/
