@@ -37,7 +37,7 @@ def claim_job() -> dict[str, Any] | None:
         f"{BACKEND_URL}/api/agent/jobs/claim",
         headers=HEADERS,
         json={"agent_id": AGENT_ID},
-        timeout=30,
+        timeout=(10,90),
     )
 
     if response.status_code == 204:
