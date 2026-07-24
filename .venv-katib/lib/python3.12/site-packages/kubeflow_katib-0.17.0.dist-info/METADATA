@@ -1,0 +1,36 @@
+Metadata-Version: 2.1
+Name: kubeflow-katib
+Version: 0.17.0
+Summary: Katib Python SDK for APIVersion v1beta1
+Home-page: https://github.com/kubeflow/katib/tree/master/sdk/python/v1beta1
+Author: Kubeflow Authors
+Author-email: premnath.vel@gmail.com
+License: Apache License Version 2.0
+Platform: UNKNOWN
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Software Development
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Dist: certifi (>=14.05.14)
+Requires-Dist: six (>=1.10)
+Requires-Dist: setuptools (>=21.0.0)
+Requires-Dist: urllib3 (>=1.15.1)
+Requires-Dist: kubernetes (>=27.2.0)
+Requires-Dist: grpcio (>=1.41.1)
+Requires-Dist: protobuf (<5,>=4.21.12)
+
+Katib Python SDK for APIVersion v1beta1
+
+
