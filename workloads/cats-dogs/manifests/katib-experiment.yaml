@@ -1,0 +1,144 @@
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+
+metadata:
+  name: cats-dogs-mobilenet-tuning
+  namespace: ml-platform
+
+spec:
+  # Tổng số Trial thành công cần chạy.
+  maxTrialCount: 3
+
+  # Chỉ chạy một TensorFlow training Pod tại một thời điểm.
+  parallelTrialCount: 1
+
+  # Dừng Experiment nếu có quá một Trial thất bại.
+  maxFailedTrialCount: 1
+
+  objective:
+    type: maximize
+    objectiveMetricName: val_auc
+
+    additionalMetricNames:
+      - val_accuracy
+      - val_loss
+
+    # val_auc và accuracy cần lớn nhất,
+    # val_loss cần nhỏ nhất.
+    metricStrategies:
+      - name: val_auc
+        value: max
+
+      - name: val_accuracy
+        value: max
+
+      - name: val_loss
+        value: min
+
+  algorithm:
+    algorithmName: random
+
+  parameters:
+    - name: learning_rate
+      parameterType: double
+      feasibleSpace:
+        min: "0.00005"
+        max: "0.0005"
+
+    - name: dropout_rate
+      parameterType: double
+      feasibleSpace:
+        min: "0.15"
+        max: "0.45"
+
+  # Đọc metric trực tiếp từ stdout của training container.
+  # train.py đã in:
+  # val_auc=...
+  # val_accuracy=...
+  # val_loss=...
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  trialTemplate:
+    # Giữ lại Job và Pod sau khi Trial xong để kiểm tra log.
+    # Khi hệ thống ổn định có thể đổi thành false.
+    retain: true
+
+    # Container mà Katib cần thu thập metric.
+    primaryContainerName: training-container
+
+    trialParameters:
+      - name: learningRate
+        description: MobileNetV2 Adam learning rate
+        reference: learning_rate
+
+      - name: dropoutRate
+        description: Dropout rate before sigmoid output
+        reference: dropout_rate
+
+      # Lấy tên Trial do Katib tự sinh,
+      # sau đó truyền xuống environment variable.
+      - name: trialName
+        description: Katib-generated Trial name
+        reference: "${trialSpec.Name}"
+
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+
+      spec:
+        backoffLimit: 0
+
+        template:
+          metadata:
+            labels:
+              app: cats-dogs-trainer
+              platform.run-role: katib-trial
+
+          spec:
+            restartPolicy: Never
+
+            containers:
+              - name: training-container
+
+                image: docker.io/library/cats-dogs-trainer:0.2
+                imagePullPolicy: Never
+
+                command:
+                  - python
+                  - -m
+                  - trainer.train
+
+                args:
+                  - "--mode=trial"
+                  - "--learning-rate=${trialParameters.learningRate}"
+                  - "--dropout-rate=${trialParameters.dropoutRate}"
+                  - "--dense-units=128"
+                  - "--batch-size=8"
+                  - "--epochs=2"
+                  - "--image-size=224"
+
+                envFrom:
+                  - secretRef:
+                      name: cats-dogs-platform-secrets
+
+                env:
+                  # Hiện tại chạy Katib thủ công, chưa qua Agent.
+                  - name: PLATFORM_JOB_ID
+                    value: "manual-katib-cats-dogs-001"
+
+                  - name: KATIB_EXPERIMENT_NAME
+                    value: "cats-dogs-mobilenet-tuning"
+
+                  - name: KATIB_TRIAL_NAME
+                    value: "${trialParameters.trialName}"
+
+                resources:
+                  requests:
+                    cpu: "2"
+                    memory: "3Gi"
+
+                  limits:
+                    cpu: "6"
+                    memory: "6Gi"

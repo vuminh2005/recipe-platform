@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+
+metadata:
+  name: cats-dogs-smoke
+  namespace: ml-platform
+  labels:
+    app: cats-dogs-trainer
+    platform.run-role: smoke-trial
+
+spec:
+  # Không tự chạy lại khi training thất bại.
+  # Điều này giúp giữ nguyên lỗi đầu tiên để debug.
+  backoffLimit: 0
+
+  template:
+    metadata:
+      labels:
+        app: cats-dogs-trainer
+        platform.run-role: smoke-trial
+
+    spec:
+      restartPolicy: Never
+
+      containers:
+        - name: training-container
+
+          # Tên image phải trùng với image đã import vào K3s.
+          image: docker.io/library/cats-dogs-trainer:0.2
+
+          # Chỉ sử dụng image local đã import vào containerd.
+          imagePullPolicy: Never
+
+          args:
+            - "--mode=trial"
+            - "--learning-rate=0.0003"
+            - "--dropout-rate=0.25"
+            - "--dense-units=128"
+            - "--batch-size=8"
+            - "--epochs=1"
+            - "--image-size=224"
+
+          # Đưa toàn bộ biến trong Kubernetes Secret
+          # thành environment variable của container.
+          envFrom:
+            - secretRef:
+                name: cats-dogs-platform-secrets
+
+          env:
+            # Các biến động của platform job.
+            # Smoke Job chưa được tạo bởi Agent nên gán thủ công.
+            - name: PLATFORM_JOB_ID
+              value: "cats-dogs-smoke-001"
+
+            - name: KATIB_EXPERIMENT_NAME
+              value: "smoke-test"
+
+            - name: KATIB_TRIAL_NAME
+              value: "smoke-trial-001"
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+
+            limits:
+              cpu: "4"
+              memory: "4Gi"

@@ -13,8 +13,20 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import JSON, DateTime, String, create_engine, select
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    String,
+    create_engine,
+    select,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from .job_contracts import (
+    AgentUpdate,
+    JobResponse,
+    TrainingConfig,
+)
 
 
 DATABASE_URL = os.getenv(
@@ -88,6 +100,41 @@ class Job(Base):
         nullable=True,
     )
 
+    best_params: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    best_metric: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    mlflow_final_run_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+
+    model_uri: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    registered_model_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    registered_model_version: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    final_metrics: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
     error_message: Mapped[str | None] = mapped_column(
         String(2000),
         nullable=True,
@@ -112,50 +159,27 @@ class AutoMLConfig(BaseModel):
     algorithm: str = "random"
 
 
-class TrainingConfig(BaseModel):
-    model: str = "tiny_cnn"
-    epochs: int = Field(default=1, ge=1, le=20)
-    batch_size: int = Field(default=8, ge=1, le=128)
-
-
 class RecipeCreate(BaseModel):
-    name: str = Field(min_length=3, max_length=100)
-    workload: Literal["hello", "cats-dogs"] = "hello"
-    automl: AutoMLConfig = AutoMLConfig()
-    training: TrainingConfig = TrainingConfig()
+    name: str = Field(
+        min_length=3,
+        max_length=100,
+    )
 
+    workload: Literal[
+        "hello",
+        "cats-dogs",
+    ] = "hello"
+
+    automl: AutoMLConfig = Field(
+        default_factory=AutoMLConfig,
+    )
+
+    training: TrainingConfig = Field(
+        default_factory=TrainingConfig,
+    )
 
 class AgentClaim(BaseModel):
     agent_id: str
-
-
-class AgentUpdate(BaseModel):
-    status: Literal[
-        "CLAIMED",
-        "RUNNING",
-        "SUCCEEDED",
-        "FAILED",
-    ]
-
-    kfp_run_id: str | None = None
-    katib_experiment_name: str | None = None
-    mlflow_parent_run_id: str | None = None
-    error_message: str | None = None
-
-
-class JobResponse(BaseModel):
-    id: str
-    status: str
-    recipe: dict[str, Any]
-    agent_id: str | None
-    kfp_run_id: str | None
-    katib_experiment_name: str | None
-    mlflow_parent_run_id: str | None
-    error_message: str | None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 def get_db():
@@ -267,7 +291,8 @@ def claim_next_job(
         select(Job)
         .where(Job.status == "PENDING")
         .order_by(Job.created_at.asc())
-        .limit(1)
+        .with_for_update(skip_locked=True)
+	.limit(1)
     )
 
     job = db.scalar(statement)
@@ -283,7 +308,6 @@ def claim_next_job(
     db.refresh(job)
 
     return job
-
 
 @app.patch(
     "/api/agent/jobs/{job_id}",
@@ -303,23 +327,24 @@ def update_job(
             detail="Job not found",
         )
 
-    job.status = payload.status
+    # mode="json" chuyển JobStatus enum thành chuỗi,
+    # ví dụ JobStatus.TUNING → "TUNING".
+    updates = payload.model_dump(
+        exclude_unset=True,
+        mode="json",
+    )
 
-    if payload.kfp_run_id is not None:
-        job.kfp_run_id = payload.kfp_run_id
+    for field_name, value in updates.items():
+        if not hasattr(job, field_name):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Unsupported job field: "
+                    f"{field_name}"
+                ),
+            )
 
-    if payload.katib_experiment_name is not None:
-        job.katib_experiment_name = (
-            payload.katib_experiment_name
-        )
-
-    if payload.mlflow_parent_run_id is not None:
-        job.mlflow_parent_run_id = (
-            payload.mlflow_parent_run_id
-        )
-
-    if payload.error_message is not None:
-        job.error_message = payload.error_message
+        setattr(job, field_name, value)
 
     job.updated_at = datetime.now(timezone.utc)
 
