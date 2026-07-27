@@ -1,0 +1,4 @@
+requests>=2.31,<3
+python-dotenv>=1,<2
+kubernetes>=30,<35
+kfp>=2.8,<3
