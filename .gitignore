@@ -4,7 +4,10 @@
 !.env.example
 
 # Python
+.venv
 .venv/
+.venv-*
+.venv*/
 __pycache__/
 *.pyc
 *.pyo
@@ -26,6 +29,8 @@ logs/*
 # Generated pipeline packages
 pipelines/compiled/*.yaml
 pipelines/compiled/*.json
+!pipelines/compiled/hello_pipeline.yaml
+!pipelines/compiled/cats_dogs_final_pipeline.yaml
 !pipelines/compiled/tabular_random_forest_pipeline.yaml
 
 # Docker

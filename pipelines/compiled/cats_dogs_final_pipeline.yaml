@@ -1,0 +1,381 @@
+# PIPELINE DEFINITION
+# Name: cats-dogs-final-pipeline
+# Description: Validate the dataset, train and evaluate using Katib best parameters, then register the model in MLflow.
+# Inputs:
+#    batch_size: int [Default: 8.0]
+#    dense_units: int [Default: 128.0]
+#    dropout_rate: float [Default: 0.25]
+#    final_epochs: int [Default: 5.0]
+#    image_size: int [Default: 224.0]
+#    katib_experiment_name: str [Default: 'cats-dogs-mobilenet-tuning']
+#    learning_rate: float [Default: 0.0003]
+#    mlflow_parent_run_id: str [Default: '']
+#    platform_job_id: str [Default: 'manual-final-001']
+#    recipe_id: str [Default: 'cats-dogs']
+#    recipe_version: str [Default: '1.0']
+#    trainable_backbone: bool [Default: False]
+components:
+  comp-final-train-and-evaluate:
+    executorLabel: exec-final-train-and-evaluate
+    inputDefinitions:
+      parameters:
+        batch_size:
+          parameterType: NUMBER_INTEGER
+        dense_units:
+          parameterType: NUMBER_INTEGER
+        dropout_rate:
+          parameterType: NUMBER_DOUBLE
+        epochs:
+          parameterType: NUMBER_INTEGER
+        image_size:
+          parameterType: NUMBER_INTEGER
+        katib_experiment_name:
+          parameterType: STRING
+        learning_rate:
+          parameterType: NUMBER_DOUBLE
+        mlflow_parent_run_id:
+          parameterType: STRING
+        platform_job_id:
+          parameterType: STRING
+        recipe_id:
+          parameterType: STRING
+        recipe_version:
+          parameterType: STRING
+        trainable_backbone:
+          parameterType: BOOLEAN
+    outputDefinitions:
+      parameters:
+        result_json:
+          parameterType: STRING
+  comp-register-model:
+    executorLabel: exec-register-model
+    inputDefinitions:
+      parameters:
+        mlflow_parent_run_id:
+          parameterType: STRING
+        platform_job_id:
+          parameterType: STRING
+        result_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        registered_result_json:
+          parameterType: STRING
+  comp-validate-dataset:
+    executorLabel: exec-validate-dataset
+    outputDefinitions:
+      parameters:
+        validation_json:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-final-train-and-evaluate:
+      container:
+        args:
+        - '
+
+          export PLATFORM_JOB_ID="$1"
+
+          export MLFLOW_PARENT_RUN_ID="$2"
+
+          export KATIB_EXPERIMENT_NAME="$3"
+
+
+          shift 3
+
+
+          exec python -m trainer.train "$@"
+
+          '
+        - runner
+        - '{{$.inputs.parameters[''platform_job_id'']}}'
+        - '{{$.inputs.parameters[''mlflow_parent_run_id'']}}'
+        - '{{$.inputs.parameters[''katib_experiment_name'']}}'
+        - --mode=final
+        - --recipe-id
+        - '{{$.inputs.parameters[''recipe_id'']}}'
+        - --recipe-version
+        - '{{$.inputs.parameters[''recipe_version'']}}'
+        - --learning-rate
+        - '{{$.inputs.parameters[''learning_rate'']}}'
+        - --dropout-rate
+        - '{{$.inputs.parameters[''dropout_rate'']}}'
+        - --dense-units
+        - '{{$.inputs.parameters[''dense_units'']}}'
+        - --batch-size
+        - '{{$.inputs.parameters[''batch_size'']}}'
+        - --epochs
+        - '{{$.inputs.parameters[''epochs'']}}'
+        - --image-size
+        - '{{$.inputs.parameters[''image_size'']}}'
+        - --trainable-backbone
+        - '{{$.inputs.parameters[''trainable_backbone'']}}'
+        - --result-path
+        - '{{$.outputs.parameters[''result_json''].output_file}}'
+        - --skip-registration
+        command:
+        - sh
+        - -c
+        image: docker.io/library/cats-dogs-trainer:0.5
+        resources:
+          cpuLimit: 6.0
+          cpuRequest: 2.0
+          memoryLimit: 6.442450944
+          memoryRequest: 3.221225472
+          resourceCpuLimit: '6'
+          resourceCpuRequest: '2'
+          resourceMemoryLimit: 6Gi
+          resourceMemoryRequest: 3Gi
+    exec-register-model:
+      container:
+        args:
+        - '
+
+          export PLATFORM_JOB_ID="$1"
+
+          export MLFLOW_PARENT_RUN_ID="$2"
+
+
+          INPUT_FILE="/tmp/training-result.json"
+
+          printf ''%s'' "$3" > "$INPUT_FILE"
+
+
+          exec python -m trainer.register_model   --input-json "$INPUT_FILE"   --output-path
+          "$4"
+
+          '
+        - runner
+        - '{{$.inputs.parameters[''platform_job_id'']}}'
+        - '{{$.inputs.parameters[''mlflow_parent_run_id'']}}'
+        - '{{$.inputs.parameters[''result_json'']}}'
+        - '{{$.outputs.parameters[''registered_result_json''].output_file}}'
+        command:
+        - sh
+        - -c
+        image: docker.io/library/cats-dogs-trainer:0.5
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 1.073741824
+          memoryRequest: 0.536870912
+          resourceCpuLimit: '1'
+          resourceCpuRequest: 250m
+          resourceMemoryLimit: 1Gi
+          resourceMemoryRequest: 512Mi
+    exec-validate-dataset:
+      container:
+        args:
+        - --output-path
+        - '{{$.outputs.parameters[''validation_json''].output_file}}'
+        command:
+        - python
+        - -m
+        - trainer.validate
+        image: docker.io/library/cats-dogs-trainer:0.5
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 2.147483648
+          memoryRequest: 1.073741824
+          resourceCpuLimit: '2'
+          resourceCpuRequest: 500m
+          resourceMemoryLimit: 2Gi
+          resourceMemoryRequest: 1Gi
+pipelineInfo:
+  description: Validate the dataset, train and evaluate using Katib best parameters,
+    then register the model in MLflow.
+  name: cats-dogs-final-pipeline
+root:
+  dag:
+    tasks:
+      final-train-and-evaluate:
+        cachingOptions: {}
+        componentRef:
+          name: comp-final-train-and-evaluate
+        dependentTasks:
+        - validate-dataset
+        inputs:
+          parameters:
+            batch_size:
+              componentInputParameter: batch_size
+            dense_units:
+              componentInputParameter: dense_units
+            dropout_rate:
+              componentInputParameter: dropout_rate
+            epochs:
+              componentInputParameter: final_epochs
+            image_size:
+              componentInputParameter: image_size
+            katib_experiment_name:
+              componentInputParameter: katib_experiment_name
+            learning_rate:
+              componentInputParameter: learning_rate
+            mlflow_parent_run_id:
+              componentInputParameter: mlflow_parent_run_id
+            platform_job_id:
+              componentInputParameter: platform_job_id
+            recipe_id:
+              componentInputParameter: recipe_id
+            recipe_version:
+              componentInputParameter: recipe_version
+            trainable_backbone:
+              componentInputParameter: trainable_backbone
+        taskInfo:
+          name: final-train-and-evaluate
+      register-model:
+        cachingOptions: {}
+        componentRef:
+          name: comp-register-model
+        dependentTasks:
+        - final-train-and-evaluate
+        inputs:
+          parameters:
+            mlflow_parent_run_id:
+              componentInputParameter: mlflow_parent_run_id
+            platform_job_id:
+              componentInputParameter: platform_job_id
+            result_json:
+              taskOutputParameter:
+                outputParameterKey: result_json
+                producerTask: final-train-and-evaluate
+        taskInfo:
+          name: register-model
+      validate-dataset:
+        cachingOptions: {}
+        componentRef:
+          name: comp-validate-dataset
+        taskInfo:
+          name: validate-dataset
+  inputDefinitions:
+    parameters:
+      batch_size:
+        defaultValue: 8.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      dense_units:
+        defaultValue: 128.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      dropout_rate:
+        defaultValue: 0.25
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      final_epochs:
+        defaultValue: 5.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      image_size:
+        defaultValue: 224.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      katib_experiment_name:
+        defaultValue: cats-dogs-mobilenet-tuning
+        isOptional: true
+        parameterType: STRING
+      learning_rate:
+        defaultValue: 0.0003
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      mlflow_parent_run_id:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      platform_job_id:
+        defaultValue: manual-final-001
+        isOptional: true
+        parameterType: STRING
+      recipe_id:
+        defaultValue: cats-dogs
+        isOptional: true
+        parameterType: STRING
+      recipe_version:
+        defaultValue: '1.0'
+        isOptional: true
+        parameterType: STRING
+      trainable_backbone:
+        defaultValue: false
+        isOptional: true
+        parameterType: BOOLEAN
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.0
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-final-train-and-evaluate:
+          imagePullPolicy: Never
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_REGISTERED_MODEL_NAME
+              secretKey: MLFLOW_REGISTERED_MODEL_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            - envVar: DATASET_URI
+              secretKey: DATASET_URI
+            optional: false
+            secretName: cats-dogs-platform-secrets
+            secretNameParameter:
+              runtimeValue:
+                constant: cats-dogs-platform-secrets
+        exec-register-model:
+          imagePullPolicy: Never
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_REGISTERED_MODEL_NAME
+              secretKey: MLFLOW_REGISTERED_MODEL_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            - envVar: DATASET_URI
+              secretKey: DATASET_URI
+            optional: false
+            secretName: cats-dogs-platform-secrets
+            secretNameParameter:
+              runtimeValue:
+                constant: cats-dogs-platform-secrets
+        exec-validate-dataset:
+          imagePullPolicy: Never
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_EXPERIMENT_NAME
+              secretKey: MLFLOW_EXPERIMENT_NAME
+            - envVar: MLFLOW_REGISTERED_MODEL_NAME
+              secretKey: MLFLOW_REGISTERED_MODEL_NAME
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            - envVar: DATASET_URI
+              secretKey: DATASET_URI
+            optional: false
+            secretName: cats-dogs-platform-secrets
+            secretNameParameter:
+              runtimeValue:
+                constant: cats-dogs-platform-secrets
