@@ -25,6 +25,9 @@ Never place tokens, R2 credentials, database URLs, or other secrets in a
 The create-job form loads public recipe metadata from `GET /api/recipes`.
 Job history remains readable when the catalog is unavailable, but new
 submissions are disabled until a valid supported catalog response is loaded.
+Job submission also requires a token entered in the form at runtime. The
+frontend keeps it only in React state and sends it only in the
+`X-Job-Submission-Token` header; it must not be configured through `VITE_*`.
 
 ## 4. Local development
 
@@ -59,3 +62,8 @@ Add a rewrite rule for React Router:
 
 Without this rewrite, directly opening `/jobs/<job-id>` can return 404 from the
 static host.
+
+Use Node `22.23.1`. In production, set `VITE_SHOW_LOCAL_TOOLS=false` and leave
+the KFP and Katib URL variables unset unless those UIs are deliberately made
+reachable through a safe external access layer. See `../RENDER_DEPLOYMENT.md`
+for the complete Backend-first rollout.

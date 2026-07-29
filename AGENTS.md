@@ -188,6 +188,8 @@ credentials, K3s context, and port-forwards.
 
 ```bash
 # Backend API (defaults to SQLite when DATABASE_URL is unset)
+AGENT_TOKEN=<secure-agent-token> \
+JOB_SUBMISSION_TOKEN=<separate-submission-token> \
 python -m uvicorn backend.app.main:app --reload
 
 # Local polling agent; loads agent/.env
@@ -211,10 +213,15 @@ Both Backend and Agent reject a missing, empty, or `development-token`
 enabled explicitly with `ALLOW_INSECURE_DEVELOPMENT_TOKEN=true`. Never use that
 switch for a shared demo, and never log or commit token values.
 
-The Backend has no end-user authentication or production rate limiting yet.
-Bind it to localhost or a trusted private network. If remote access is
+The Backend also rejects startup without a distinct
+`JOB_SUBMISSION_TOKEN`. Clients must send it in
+`X-Job-Submission-Token` only for `POST /api/jobs`; the frontend collects it
+at runtime and retains it only in React memory. This is a narrow submission
+gate, not end-user authentication, RBAC, or production rate limiting. Bind the
+Backend to localhost or a trusted private network. If remote access is
 required, put authentication and network controls in front of it; CORS is not
-an authorization mechanism.
+an authorization mechanism. See `RENDER_DEPLOYMENT.md` and the component
+`.env.example` files for placeholder-only deployment configuration.
 Relevant optional settings include `AGENT_ID`, `KFP_ENDPOINT`,
 `KATIB_NAMESPACE`, `MLFLOW_EXPERIMENT_NAME`, `POLL_INTERVAL_SECONDS`, and
 `CATS_DOGS_PIPELINE_PATH`. The Hello handler also accepts

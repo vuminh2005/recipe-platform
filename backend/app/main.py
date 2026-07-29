@@ -1,4 +1,5 @@
 import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -10,8 +11,10 @@ from fastapi import (
     Header,
     HTTPException,
     Response,
+    Security,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from sqlalchemy import (
     JSON,
@@ -35,12 +38,29 @@ from .recipe_normalization import (
 )
 
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./recipe_platform.db",
+def normalize_database_url(database_url: str) -> str:
+    """Select psycopg 3 for Render-style PostgreSQL URLs."""
+    prefix = "postgresql://"
+    if database_url.startswith(prefix):
+        return f"postgresql+psycopg://{database_url[len(prefix):]}"
+    return database_url
+
+
+DATABASE_URL = normalize_database_url(
+    os.getenv(
+        "DATABASE_URL",
+        "sqlite:///./recipe_platform.db",
+    )
 )
 
 AGENT_TOKEN = os.getenv("AGENT_TOKEN", "").strip()
+JOB_SUBMISSION_TOKEN = os.getenv("JOB_SUBMISSION_TOKEN", "").strip()
+JOB_SUBMISSION_HEADER = APIKeyHeader(
+    name="X-Job-Submission-Token",
+    scheme_name="JobSubmissionToken",
+    description="Runtime token required only when creating a job.",
+    auto_error=False,
+)
 
 CORS_ORIGINS = [
     origin.strip()
@@ -177,6 +197,24 @@ def verify_agent_token(
         )
 
 
+def verify_job_submission_token(
+    x_job_submission_token: str | None = Security(JOB_SUBMISSION_HEADER),
+) -> None:
+    if x_job_submission_token is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Job submission token is required",
+        )
+    if not secrets.compare_digest(
+        x_job_submission_token,
+        JOB_SUBMISSION_TOKEN,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid job submission token",
+        )
+
+
 def validate_agent_token_configuration() -> None:
     if not AGENT_TOKEN:
         raise RuntimeError(
@@ -194,9 +232,17 @@ def validate_agent_token_configuration() -> None:
         )
 
 
+def validate_job_submission_token_configuration() -> None:
+    if not JOB_SUBMISSION_TOKEN:
+        raise RuntimeError(
+            "JOB_SUBMISSION_TOKEN must be configured before the Backend starts"
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_agent_token_configuration()
+    validate_job_submission_token_configuration()
     Base.metadata.create_all(engine)
     yield
 
@@ -225,6 +271,7 @@ def health():
     "/api/jobs",
     response_model=JobResponse,
     status_code=201,
+    dependencies=[Depends(verify_job_submission_token)],
 )
 def create_job(
     recipe: RecipeCreate,

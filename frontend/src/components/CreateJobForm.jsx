@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { createJob } from "../api/jobs";
+import {
+  createJob,
+  getJobSubmissionErrorIssues,
+} from "../api/jobs";
 import { buildRecipeJobPayload } from "../utils/buildRecipeJobPayload";
 import {
   createConfigurationFromDefaults,
@@ -52,6 +55,7 @@ function ReadyCreateJobForm({ recipes, catalogIssues, onCreated }) {
     initialRecipe.recipe_id,
   );
   const [name, setName] = useState(`${initialRecipe.recipe_id}-recipe`);
+  const [submissionToken, setSubmissionToken] = useState("");
   const [configuration, setConfiguration] = useState(() =>
     createConfigurationFromDefaults(initialRecipe),
   );
@@ -120,6 +124,12 @@ function ReadyCreateJobForm({ recipes, catalogIssues, onCreated }) {
 
     const form = { name, configuration };
     const clientIssues = validateRecipeForm(form, selectedRecipe);
+    if (!submissionToken.trim()) {
+      clientIssues.push({
+        path: "submission_token",
+        message: "Enter the job submission token before creating a job.",
+      });
+    }
     setValidationIssues(clientIssues);
     setRequestIssues([]);
 
@@ -131,14 +141,10 @@ function ReadyCreateJobForm({ recipes, catalogIssues, onCreated }) {
 
     try {
       const payload = buildRecipeJobPayload(form, selectedRecipe);
-      const createdJob = await createJob(payload);
+      const createdJob = await createJob(payload, submissionToken);
       onCreated?.(createdJob);
     } catch (requestError) {
-      setRequestIssues(
-        requestError.issues?.length
-          ? requestError.issues
-          : [{ path: "", message: requestError.message }],
-      );
+      setRequestIssues(getJobSubmissionErrorIssues(requestError));
     } finally {
       setSubmitting(false);
     }
@@ -164,7 +170,12 @@ function ReadyCreateJobForm({ recipes, catalogIssues, onCreated }) {
         selectedRecipe={selectedRecipe}
         onChange={selectRecipe}
       />
-      <CommonJobFields name={name} onChange={setName} />
+      <CommonJobFields
+        name={name}
+        onChange={setName}
+        submissionToken={submissionToken}
+        onSubmissionTokenChange={setSubmissionToken}
+      />
       <RecipeFields
         recipe={selectedRecipe}
         training={configuration.training}
