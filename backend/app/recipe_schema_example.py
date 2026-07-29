@@ -1,18 +1,19 @@
-"""Example showing where TrainingConfig belongs in your existing recipe schema."""
+"""Example using the active recipe request contracts."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
-
-from .job_contracts import TrainingConfig
-
-
-class AutoMLConfig(BaseModel):
-    enabled: bool = True
-    max_trials: int = Field(default=3, ge=1, le=20)
+from .job_contracts import RecipeCreate
+from .recipe_normalization import normalize_recipe_request
 
 
-class RecipeCreate(BaseModel):
-    name: str = "cats-dogs-recipe"
-    training: TrainingConfig = Field(default_factory=TrainingConfig)
-    automl: AutoMLConfig = Field(default_factory=AutoMLConfig)
+EXAMPLE_RECIPE = RecipeCreate(
+    name="cats-dogs-recipe",
+    recipe_id="cats-dogs",
+    recipe_version="1.0",
+    configuration={
+        "training": {},
+        "automl": {},
+    },
+)
+
+NORMALIZED_EXAMPLE = normalize_recipe_request(EXAMPLE_RECIPE)

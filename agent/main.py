@@ -12,7 +12,7 @@ if __package__ in {None, ""}:
 from dotenv import load_dotenv
 
 from agent.backend_client import BackendClient
-from agent.cats_dogs_executor import execute_cats_dogs_job
+from agent.recipe_registry import execute_job
 from agent.settings import Settings
 
 
@@ -34,7 +34,7 @@ def main() -> None:
                 continue
 
             logging.info("Claimed platform job %s", job["id"])
-            execute_cats_dogs_job(job, settings=settings, backend=backend)
+            execute_job(job, settings=settings, backend=backend)
         except KeyboardInterrupt:
             raise
         except Exception:

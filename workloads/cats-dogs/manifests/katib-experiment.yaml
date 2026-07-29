@@ -102,7 +102,7 @@ spec:
             containers:
               - name: training-container
 
-                image: docker.io/library/cats-dogs-trainer:0.2
+                image: docker.io/library/cats-dogs-trainer:0.4
                 imagePullPolicy: Never
 
                 command:
@@ -118,6 +118,7 @@ spec:
                   - "--batch-size=8"
                   - "--epochs=2"
                   - "--image-size=224"
+                  - "--trainable-backbone=false"
 
                 envFrom:
                   - secretRef:

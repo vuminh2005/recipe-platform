@@ -71,14 +71,17 @@ export default function JobsPage() {
   }, []);
 
   useEffect(() => {
-    refreshJobs();
+    const initialRefreshTimer = window.setTimeout(refreshJobs, 0);
 
-    const timer = window.setInterval(
+    const pollingTimer = window.setInterval(
       () => refreshJobs({ silent: true }),
       LIST_POLL_INTERVAL_MS,
     );
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialRefreshTimer);
+      window.clearInterval(pollingTimer);
+    };
   }, [refreshJobs]);
 
   useEffect(() => {

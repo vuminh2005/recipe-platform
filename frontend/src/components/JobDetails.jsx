@@ -4,7 +4,6 @@ import MetricsGrid from "./MetricsGrid";
 import {
   formatBoolean,
   formatDate,
-  formatKey,
   formatMetric,
   truncateMiddle,
 } from "../utils/format";
@@ -22,29 +21,30 @@ function DefinitionList({ entries }) {
   );
 }
 
-function JsonDetails({ title, value }) {
-  const entries = Object.entries(value || {});
-
-  return (
-    <section className="detail-card">
-      <h3>{title}</h3>
-      {entries.length ? (
-        <DefinitionList
-          entries={entries.map(([key, item]) => [
-            formatKey(key),
-            typeof item === "number" ? formatMetric(item) : String(item),
-          ])}
-        />
-      ) : (
-        <p className="empty-state">Not available yet.</p>
-      )}
-    </section>
-  );
-}
-
 export default function JobDetails({ job }) {
   const training = job.recipe?.training || {};
   const automl = job.recipe?.automl || {};
+  const recipeConfiguration = [
+    ["Workload", job.recipe?.workload],
+    ["Model", training.model],
+    ["Image size", training.image_size],
+    ["Trial epochs", training.trial_epochs],
+    ["Final epochs", training.final_epochs],
+    ["Batch size", training.batch_size],
+    ["Dense units", training.dense_units],
+    [
+      "Trainable backbone",
+      formatBoolean(Boolean(training.trainable_backbone)),
+    ],
+    ["AutoML enabled", formatBoolean(Boolean(automl.enabled))],
+    ["Max trials", automl.max_trials],
+    ["Parallel trials", automl.parallel_trials],
+    ["Algorithm", automl.algorithm],
+  ];
+
+  if (training.epochs != null) {
+    recipeConfiguration.push(["Legacy epochs (ignored)", training.epochs]);
+  }
 
   return (
     <div className="details-layout">
@@ -70,25 +70,7 @@ export default function JobDetails({ job }) {
       <section className="details-grid">
         <section className="detail-card">
           <h3>Recipe configuration</h3>
-          <DefinitionList
-            entries={[
-              ["Workload", job.recipe?.workload],
-              ["Model", training.model],
-              ["Image size", training.image_size],
-              ["Trial epochs", training.trial_epochs ?? training.epochs],
-              ["Final epochs", training.final_epochs ?? training.epochs],
-              ["Batch size", training.batch_size],
-              ["Dense units", training.dense_units],
-              [
-                "Trainable backbone",
-                formatBoolean(Boolean(training.trainable_backbone)),
-              ],
-              ["AutoML enabled", formatBoolean(Boolean(automl.enabled))],
-              ["Max trials", automl.max_trials],
-              ["Parallel trials", automl.parallel_trials],
-              ["Algorithm", automl.algorithm],
-            ]}
-          />
+          <DefinitionList entries={recipeConfiguration} />
         </section>
 
         <section className="detail-card">

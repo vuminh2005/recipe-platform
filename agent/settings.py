@@ -13,6 +13,18 @@ def required_env(name: str) -> str:
 
 
 @dataclass(frozen=True)
+class CatsDogsSettings:
+    pipeline_path: Path
+    mlflow_experiment_name: str
+
+
+@dataclass(frozen=True)
+class HelloSettings:
+    pipeline_path: Path
+    kfp_experiment_name: str
+
+
+@dataclass(frozen=True)
 class Settings:
     backend_url: str
     agent_id: str
@@ -20,9 +32,9 @@ class Settings:
     kfp_endpoint: str
     poll_interval_seconds: int
     mlflow_tracking_uri: str
-    mlflow_experiment_name: str
     katib_namespace: str
-    cats_dogs_pipeline_path: Path
+    cats_dogs: CatsDogsSettings
+    hello: HelloSettings
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -33,14 +45,29 @@ class Settings:
             kfp_endpoint=os.getenv("KFP_ENDPOINT", "http://127.0.0.1:8080"),
             poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "10")),
             mlflow_tracking_uri=required_env("MLFLOW_TRACKING_URI").rstrip("/"),
-            mlflow_experiment_name=os.getenv(
-                "MLFLOW_EXPERIMENT_NAME", "cats_dogs_recipe_demo"
-            ),
             katib_namespace=os.getenv("KATIB_NAMESPACE", "ml-platform"),
-            cats_dogs_pipeline_path=Path(
-                os.getenv(
-                    "CATS_DOGS_PIPELINE_PATH",
-                    "pipelines/compiled/cats_dogs_final_pipeline.yaml",
-                )
-            ).resolve(),
+            cats_dogs=CatsDogsSettings(
+                pipeline_path=Path(
+                    os.getenv(
+                        "CATS_DOGS_PIPELINE_PATH",
+                        "pipelines/compiled/cats_dogs_final_pipeline.yaml",
+                    )
+                ).resolve(),
+                mlflow_experiment_name=os.getenv(
+                    "MLFLOW_EXPERIMENT_NAME",
+                    "cats_dogs_recipe_demo",
+                ),
+            ),
+            hello=HelloSettings(
+                pipeline_path=Path(
+                    os.getenv(
+                        "HELLO_PIPELINE_PATH",
+                        "pipelines/compiled/hello_pipeline.yaml",
+                    )
+                ).resolve(),
+                kfp_experiment_name=os.getenv(
+                    "HELLO_KFP_EXPERIMENT_NAME",
+                    "recipe-platform-jobs",
+                ),
+            ),
         )

@@ -6,92 +6,81 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 import mlflow
 import requests
-from mlflow.tracking import MlflowClient
+from mlflow import MlflowClient
 
-LOGGER = logging.getLogger("cats_dogs_register")
+
+LOGGER = logging.getLogger("cats_dogs_register_model")
+
+CANDIDATE_ALIAS = "candidate"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Register an MLflow model logged by the preceding KFP task."
+        description=(
+            "Register a logged Cats & Dogs model, "
+            "assign the candidate alias, and attach inference metadata."
+        )
     )
+
     parser.add_argument(
         "--input-json",
         required=True,
-        help="Path to the JSON file produced by final train-and-evaluate.",
+        help="Path to the final training result JSON file.",
     )
+
     parser.add_argument(
         "--output-path",
         required=True,
-        help="KFP output-parameter file for the enriched registration JSON.",
+        help="Path where the registration result JSON is written.",
     )
+
     return parser.parse_args()
 
 
 def required_env(name: str) -> str:
     value = os.getenv(name)
+
     if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
+        raise RuntimeError(
+            f"Missing required environment variable: {name}"
+        )
+
     return value
 
 
 def wait_for_mlflow(tracking_uri: str) -> None:
     health_url = f"{tracking_uri.rstrip('/')}/health"
-    last_error: Exception | None = None
-    for attempt in range(1, 9):
+    for attempt in range(60):
         try:
-            response = requests.get(health_url, timeout=(10, 180))
-            if response.status_code < 500:
+            response = requests.get(health_url, timeout=3)
+            if response.ok:
                 return
-            last_error = RuntimeError(
-                f"MLflow returned HTTP {response.status_code}: {response.text[:200]}"
-            )
-        except requests.RequestException as exc:
-            last_error = exc
-        LOGGER.warning("MLflow not ready, attempt %d/8: %s", attempt, last_error)
-        time.sleep(10)
-    raise RuntimeError("MLflow tracking server did not become ready") from last_error
+        except requests.RequestException:
+            pass
+        if attempt < 59:
+            time.sleep(2)
+    raise RuntimeError(f"MLflow did not become ready at {health_url}")
 
 
-def find_existing_version(
-    client: MlflowClient,
-    *,
-    model_name: str,
-    platform_job_id: str,
-    run_id: str,
-    model_uri: str,
-):
-    """Make registration idempotent when a KFP task is retried."""
-    for version in client.search_model_versions(f"name='{model_name}'"):
-        tags = dict(getattr(version, "tags", {}) or {})
-        if tags.get("platform.job_id") == platform_job_id:
-            return version
-        if str(getattr(version, "run_id", "") or "") == run_id:
-            return version
-        if str(getattr(version, "source", "") or "") == model_uri:
-            return version
-    return None
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    args = parse_args()
-
-    input_path = Path(args.input_json)
+def read_result(path_value: str) -> dict[str, Any]:
+    input_path = Path(path_value)
 
     if not input_path.exists():
         raise FileNotFoundError(
-            f"Training result JSON does not exist: {input_path}"
+            f"Training result file does not exist: {input_path}"
         )
 
-    raw_result = input_path.read_text(encoding="utf-8").strip()
+    raw_result = input_path.read_text(
+        encoding="utf-8"
+    ).strip()
 
     if not raw_result:
         raise RuntimeError(
-            f"Training result JSON is empty: {input_path}"
+            f"Training result file is empty: {input_path}"
         )
 
     LOGGER.info(
@@ -101,95 +90,393 @@ def main() -> None:
     )
 
     try:
-        result = json.loads(raw_result)
+        parsed = json.loads(raw_result)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"Training result is not valid JSON: {input_path}. "
-            f"Content starts with: {raw_result[:200]!r}"
+            f"Invalid training result JSON in {input_path}: {exc}"
         ) from exc
-    run_id = str(result["mlflow_run_id"])
-    model_uri = str(result["model_uri"])
-    platform_job_id = str(
-        result.get("platform_job_id")
-        or os.getenv("PLATFORM_JOB_ID")
-        or "standalone"
+
+    if not isinstance(parsed, dict):
+        raise RuntimeError(
+            "Training result must be a JSON object"
+        )
+
+    return parsed
+
+
+def require_result_field(
+    result: dict[str, Any],
+    field_name: str,
+) -> Any:
+    value = result.get(field_name)
+
+    if value is None or value == "":
+        raise RuntimeError(
+            f"Training result is missing required field: {field_name}"
+        )
+
+    return value
+
+
+def tag_value(value: Any) -> str:
+    """Convert metadata to a safe MLflow tag string."""
+
+    if isinstance(value, bool):
+        return "true" if value else "false"
+
+    if isinstance(value, (dict, list)):
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    return str(value)
+
+
+def set_version_tag_if_present(
+    client: MlflowClient,
+    *,
+    model_name: str,
+    version: str,
+    key: str,
+    value: Any,
+) -> None:
+    if value is None:
+        return
+
+    client.set_model_version_tag(
+        name=model_name,
+        version=version,
+        key=key,
+        value=tag_value(value),
     )
 
-    tracking_uri = required_env("MLFLOW_TRACKING_URI")
-    model_name = required_env("MLFLOW_REGISTERED_MODEL_NAME")
-    wait_for_mlflow(tracking_uri)
-    mlflow.set_tracking_uri(tracking_uri)
-    client = MlflowClient()
 
+def find_existing_version(
+    client: MlflowClient,
+    model_name: str,
+    platform_job_id: str,
+    run_id: str,
+    model_uri: str,
+) -> Any | None:
+    for version in client.search_model_versions(f"name = '{model_name}'"):
+        tags = getattr(version, "tags", {}) or {}
+        if tags.get("platform.job_id") == platform_job_id:
+            return version
+        if str(getattr(version, "run_id", "") or "") == run_id:
+            return version
+        if str(getattr(version, "source", "") or "") == model_uri:
+            return version
+    return None
+
+
+def get_or_register_model_version(
+    client: MlflowClient,
+    model_name: str,
+    model_uri: str,
+    platform_job_id: str,
+    run_id: str,
+) -> Any:
     existing = find_existing_version(
-        client,
+        client=client,
         model_name=model_name,
         platform_job_id=platform_job_id,
         run_id=run_id,
         model_uri=model_uri,
     )
-    if existing is None:
-        version = mlflow.register_model(
-            model_uri=model_uri,
-            name=model_name,
-            await_registration_for=300,
-        )
-    else:
-        version = existing
+    if existing is not None:
         LOGGER.info(
             "Reusing registered model version %s for platform job %s",
-            version.version,
+            existing.version,
             platform_job_id,
         )
-
-    version_number = str(version.version)
-    version_tags = {
-        "platform.job_id": platform_job_id,
-        "mlflow.run_id": run_id,
-        "platform.model_uri": model_uri,
-    }
-    for metric_name in (
-        "final_threshold",
-        "test_accuracy",
-        "test_f1",
-        "test_auc",
-        "val_auc",
-    ):
-        value = result.get(metric_name)
-        if value is not None:
-            version_tags[f"metric.{metric_name}"] = str(value)
-
-    for key, value in version_tags.items():
-        client.set_model_version_tag(model_name, version_number, key, value)
-
-    run_tags = {
-        "platform.model_uri": model_uri,
-        "platform.registered_model_name": model_name,
-        "platform.registered_model_version": version_number,
-        "platform.result": "final_model_registered",
-    }
-    for key, value in run_tags.items():
-        client.set_tag(run_id, key, value)
-
-    result.update(
-        {
-            "registered_model_name": model_name,
-            "registered_model_version": version_number,
-        }
+        return existing
+    return mlflow.register_model(
+        model_uri=model_uri,
+        name=model_name,
+        await_registration_for=300,
     )
 
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s] %(message)s",
+    )
+
+    args = parse_args()
+    result = read_result(args.input_json)
+
+    tracking_uri = required_env(
+        "MLFLOW_TRACKING_URI"
+    )
+
+    registered_model_name = required_env(
+        "MLFLOW_REGISTERED_MODEL_NAME"
+    )
+
+    model_uri = str(
+        require_result_field(result, "model_uri")
+    )
+
+    mlflow_run_id = str(
+        require_result_field(result, "mlflow_run_id")
+    )
+
+    platform_job_id = (
+        os.getenv("PLATFORM_JOB_ID")
+        or result.get("platform_job_id")
+        or "standalone"
+    )
+
+    wait_for_mlflow(tracking_uri)
+    mlflow.set_tracking_uri(tracking_uri)
+
+    client = MlflowClient(
+        tracking_uri=tracking_uri
+    )
+
+    LOGGER.info(
+        "Registering model | name=%s | source=%s",
+        registered_model_name,
+        model_uri,
+    )
+
+    model_version = get_or_register_model_version(
+        client=client,
+        model_name=registered_model_name,
+        model_uri=model_uri,
+        platform_job_id=str(platform_job_id),
+        run_id=mlflow_run_id,
+    )
+
+    version_number = str(model_version.version)
+
+    LOGGER.info(
+        "Registered model version | name=%s | version=%s",
+        registered_model_name,
+        version_number,
+    )
+
+    # ------------------------------------------------------------------
+    # Registered model-level metadata
+    # ------------------------------------------------------------------
+
+    client.set_registered_model_tag(
+        name=registered_model_name,
+        key="task",
+        value="binary_image_classification",
+    )
+
+    client.set_registered_model_tag(
+        name=registered_model_name,
+        key="framework",
+        value="tensorflow_keras",
+    )
+
+    client.set_registered_model_tag(
+        name=registered_model_name,
+        key="labels",
+        value="cat,dog",
+    )
+
+    # ------------------------------------------------------------------
+    # Model version-level metadata
+    # ------------------------------------------------------------------
+
+    version_tags = {
+        "platform.job_id": platform_job_id,
+        "platform.run_id": mlflow_run_id,
+        "platform.lifecycle": "candidate",
+
+        "model.architecture": result.get(
+            "model_architecture",
+            "MobileNetV2",
+        ),
+
+        "inference.image_size": result.get(
+            "image_size"
+        ),
+
+        "inference.num_channels": result.get(
+            "num_channels",
+            3,
+        ),
+
+        "inference.threshold": result.get(
+            "final_threshold"
+        ),
+
+        "inference.output": result.get(
+            "output_semantics",
+            "prob_dog",
+        ),
+
+        "inference.preprocessing": result.get(
+            "preprocessing",
+            "embedded_mobilenet_v2",
+        ),
+
+        "metric.final_threshold": result.get(
+            "final_threshold"
+        ),
+
+        "metric.val_loss": result.get(
+            "val_loss"
+        ),
+
+        "metric.val_accuracy": result.get(
+            "val_accuracy"
+        ),
+
+        "metric.val_auc": result.get(
+            "val_auc"
+        ),
+
+        "metric.test_accuracy": result.get(
+            "test_accuracy"
+        ),
+
+        "metric.test_f1": result.get(
+            "test_f1"
+        ),
+
+        "metric.test_auc": result.get(
+            "test_auc"
+        ),
+
+        "metric.best_epoch": result.get(
+            "best_epoch"
+        ),
+    }
+
+    for key, value in version_tags.items():
+        set_version_tag_if_present(
+            client,
+            model_name=registered_model_name,
+            version=version_number,
+            key=key,
+            value=value,
+        )
+
+    # ------------------------------------------------------------------
+    # Candidate alias
+    # ------------------------------------------------------------------
+    #
+    # This moves the candidate alias to the newly registered version.
+    # It intentionally does not modify the champion alias.
+    # ------------------------------------------------------------------
+
+    client.set_registered_model_alias(
+        name=registered_model_name,
+        alias=CANDIDATE_ALIAS,
+        version=version_number,
+    )
+
+    # Mark the source MLflow run as fully registered.
+    client.set_tag(
+        run_id=mlflow_run_id,
+        key="platform.result",
+        value="final_model_registered",
+    )
+
+    client.set_tag(
+        run_id=mlflow_run_id,
+        key="platform.registered_model_name",
+        value=registered_model_name,
+    )
+
+    client.set_tag(
+        run_id=mlflow_run_id,
+        key="platform.registered_model_version",
+        value=version_number,
+    )
+
+    output_result = {
+        **result,
+
+        "platform_job_id": platform_job_id,
+
+        "registered_model_name": (
+            registered_model_name
+        ),
+
+        "registered_model_version": (
+            version_number
+        ),
+
+        "registered_model_alias": (
+            CANDIDATE_ALIAS
+        ),
+
+        "registered_model_uri": (
+            f"models:/{registered_model_name}/"
+            f"{version_number}"
+        ),
+
+        "candidate_model_uri": (
+            f"models:/{registered_model_name}"
+            f"@{CANDIDATE_ALIAS}"
+        ),
+    }
+
     output_path = Path(args.output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     output_path.write_text(
-        json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+        json.dumps(
+            output_result,
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
     LOGGER.info(
-        "Registered %s version %s from run %s",
-        model_name,
+        "Candidate alias assigned | "
+        "model=%s | alias=%s | version=%s",
+        registered_model_name,
+        CANDIDATE_ALIAS,
         version_number,
-        run_id,
+    )
+
+    LOGGER.info(
+        "Registration output written to %s",
+        output_path,
+    )
+
+    print(
+        f"registered_model_name="
+        f"{registered_model_name}",
+        flush=True,
+    )
+
+    print(
+        f"registered_model_version="
+        f"{version_number}",
+        flush=True,
+    )
+
+    print(
+        f"registered_model_alias="
+        f"{CANDIDATE_ALIAS}",
+        flush=True,
+    )
+
+    print(
+        f"candidate_model_uri="
+        f"models:/{registered_model_name}"
+        f"@{CANDIDATE_ALIAS}",
+        flush=True,
+    )
+
+    print(
+        f"output_path={output_path}",
+        flush=True,
     )
 
 

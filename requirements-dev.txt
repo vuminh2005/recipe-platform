@@ -1,0 +1,15 @@
+# Shared validation environment. Keep component runtime constraints authoritative.
+-r backend/requirements.txt
+-r agent/requirements.txt
+
+# Required by pipelines/cats_dogs_final_pipeline.py for Kubernetes task helpers.
+kfp-kubernetes==2.17.0
+
+# Agent entry point dependency currently listed only in the legacy additions file.
+python-dotenv>=1,<2
+
+# FastAPI ASGI route tests.
+httpx>=0.27,<1
+
+# MLflow 2.21 requires protobuf<6 while KFP 2.17 requires protobuf>=6.31.1.
+# Use workloads/cats-dogs/requirements-test.txt in a separate virtual environment.

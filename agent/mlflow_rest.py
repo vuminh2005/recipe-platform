@@ -156,46 +156,20 @@ class MlflowRestClient:
             "metrics": metrics,
         }
 
-    def find_final_run(
+    def find_latest_run(
         self,
         *,
         experiment_id: str,
         platform_job_id: str,
+        run_role: str,
+        max_results: int = 5,
     ) -> dict[str, Any] | None:
         runs = self.search_runs(
             experiment_id=experiment_id,
             platform_job_id=platform_job_id,
-            run_role="final_training",
-            max_results=5,
+            run_role=run_role,
+            max_results=max_results,
         )
         if not runs:
             return None
         return self.normalize_run(runs[0])
-
-    def wait_for_registered_final_run(
-        self,
-        *,
-        experiment_id: str,
-        platform_job_id: str,
-        timeout_seconds: int = 300,
-        poll_seconds: int = 5,
-    ) -> dict[str, Any]:
-        deadline = time.monotonic() + timeout_seconds
-        last_run: dict[str, Any] | None = None
-        while time.monotonic() < deadline:
-            last_run = self.find_final_run(
-                experiment_id=experiment_id,
-                platform_job_id=platform_job_id,
-            )
-            if last_run:
-                tags = last_run["tags"]
-                if (
-                    tags.get("platform.result") == "final_model_registered"
-                    and tags.get("platform.registered_model_version")
-                ):
-                    return last_run
-            time.sleep(poll_seconds)
-        raise TimeoutError(
-            f"Final registered MLflow run not found for job {platform_job_id}; "
-            f"last_run={last_run}"
-        )

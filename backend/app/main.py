@@ -2,7 +2,7 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import (
     Depends,
@@ -12,7 +12,7 @@ from fastapi import (
     Response,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -25,7 +25,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from .job_contracts import (
     AgentUpdate,
     JobResponse,
-    TrainingConfig,
+    RecipeCreate,
+)
+from .job_results import apply_result_patch
+from .recipe_catalog import router as recipe_catalog_router
+from .recipe_normalization import (
+    RecipeNormalizationError,
+    normalize_recipe_request,
 )
 
 
@@ -152,32 +158,6 @@ class Job(Base):
     )
 
 
-class AutoMLConfig(BaseModel):
-    enabled: bool = True
-    max_trials: int = Field(default=3, ge=1, le=20)
-    parallel_trials: int = Field(default=1, ge=1, le=4)
-    algorithm: str = "random"
-
-
-class RecipeCreate(BaseModel):
-    name: str = Field(
-        min_length=3,
-        max_length=100,
-    )
-
-    workload: Literal[
-        "hello",
-        "cats-dogs",
-    ] = "hello"
-
-    automl: AutoMLConfig = Field(
-        default_factory=AutoMLConfig,
-    )
-
-    training: TrainingConfig = Field(
-        default_factory=TrainingConfig,
-    )
-
 class AgentClaim(BaseModel):
     agent_id: str
 
@@ -215,6 +195,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(recipe_catalog_router)
 
 
 @app.get("/health")
@@ -231,8 +212,13 @@ def create_job(
     recipe: RecipeCreate,
     db: Session = Depends(get_db),
 ):
+    try:
+        recipe_payload = normalize_recipe_request(recipe)
+    except RecipeNormalizationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     job = Job(
-        recipe=recipe.model_dump(),
+        recipe=recipe_payload,
         status="PENDING",
     )
 
@@ -332,6 +318,7 @@ def update_job(
     updates = payload.model_dump(
         exclude_unset=True,
         mode="json",
+        exclude={"result_patch"},
     )
 
     for field_name, value in updates.items():
@@ -345,6 +332,12 @@ def update_job(
             )
 
         setattr(job, field_name, value)
+
+    if payload.result_patch is not None:
+        try:
+            apply_result_patch(job, payload.result_patch)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     job.updated_at = datetime.now(timezone.utc)
 

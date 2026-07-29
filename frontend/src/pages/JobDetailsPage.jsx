@@ -26,7 +26,8 @@ export default function JobDetailsPage() {
   }, [jobId]);
 
   useEffect(() => {
-    refreshJob();
+    const timer = window.setTimeout(refreshJob, 0);
+    return () => window.clearTimeout(timer);
   }, [refreshJob]);
 
   useEffect(() => {
