@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getBackendHealth, listJobs } from "../api/jobs";
+import { listRecipes } from "../api/recipes";
 import CreateJobForm from "../components/CreateJobForm";
 import JobTable from "../components/JobTable";
 import ProductionCard from "../components/ProductionCard";
 import { formatDate } from "../utils/format";
 import { isTerminalStatus } from "../utils/jobStatus";
+import {
+  indexRecipes,
+  prepareRecipeCatalog,
+} from "../utils/recipeCatalog";
 
 const LIST_POLL_INTERVAL_MS = 10_000;
 const ACTIVE_AGENT_WINDOW_MS = 2 * 60 * 1000;
@@ -49,6 +54,10 @@ export default function JobsPage() {
   const [backendHealth, setBackendHealth] = useState("checking");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [recipes, setRecipes] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogIssues, setCatalogIssues] = useState([]);
 
   const refreshJobs = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -110,7 +119,42 @@ export default function JobsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCatalog() {
+      try {
+        const payload = await listRecipes();
+        const prepared = prepareRecipeCatalog(payload);
+
+        if (!cancelled) {
+          setRecipes(prepared.recipes);
+          setCatalogIssues(prepared.issues);
+          setCatalogError("");
+        }
+      } catch (requestError) {
+        if (!cancelled) {
+          setRecipes([]);
+          setCatalogIssues([]);
+          setCatalogError(
+            `Recipe Catalog is unavailable: ${requestError.message}`,
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setCatalogLoading(false);
+        }
+      }
+    }
+
+    loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const agentState = useMemo(() => inferAgentState(jobs), [jobs]);
+  const catalogById = useMemo(() => indexRecipes(recipes), [recipes]);
 
   const backendCard =
     backendHealth === "online"
@@ -171,8 +215,14 @@ export default function JobsPage() {
       </section>
 
       <div className="dashboard-columns">
-        <CreateJobForm onCreated={handleCreated} />
-        <ProductionCard jobs={jobs} />
+        <CreateJobForm
+          recipes={recipes}
+          catalogLoading={catalogLoading}
+          catalogError={catalogError}
+          catalogIssues={catalogIssues}
+          onCreated={handleCreated}
+        />
+        <ProductionCard jobs={jobs} catalogById={catalogById} />
       </div>
 
       <section className="panel">
@@ -194,7 +244,11 @@ export default function JobsPage() {
 
         {error ? <div className="alert alert--danger">{error}</div> : null}
 
-        <JobTable jobs={jobs} loading={loading} />
+        <JobTable
+          jobs={jobs}
+          loading={loading}
+          catalogById={catalogById}
+        />
       </section>
     </div>
   );

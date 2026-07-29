@@ -273,6 +273,10 @@ a {
   border-top: 1px solid #edf0f5;
 }
 
+.form-section--first {
+  border-top: 0;
+}
+
 .form-section h3 {
   margin-bottom: 16px;
   font-size: 1rem;
@@ -321,6 +325,168 @@ a {
 .field select:disabled {
   color: #8893a5;
   background: #f2f4f8;
+}
+
+.field__description {
+  color: #8490a2;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-heading h3,
+.section-heading p {
+  margin-top: 0;
+}
+
+.recipe-description,
+.read-only-note,
+.effective-parameters {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #dfe5ef;
+  border-radius: 14px;
+  background: #f8f9fc;
+}
+
+.recipe-description p,
+.effective-parameters p {
+  margin: 7px 0;
+  color: #5f6b7e;
+  line-height: 1.55;
+}
+
+.recipe-description small,
+.read-only-note small {
+  color: #8490a2;
+}
+
+.recipe-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.recipe-summary > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f4f2ff;
+}
+
+.recipe-summary span {
+  color: #7d719d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.recipe-summary strong {
+  color: #342a54;
+  font-size: 0.86rem;
+}
+
+.read-only-note {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.automl-mode {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.automl-mode--on {
+  color: #5b3eb5;
+  background: #f0eaff;
+}
+
+.automl-mode--off {
+  color: #236b51;
+  background: #e5f6ee;
+}
+
+.search-space-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.range-field {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #dfe5ef;
+  border-radius: 14px;
+}
+
+.range-field legend {
+  padding: 0 5px;
+  color: #263146;
+  font-weight: 800;
+}
+
+.range-field p {
+  min-height: 38px;
+  margin: 2px 0 12px;
+  color: #8490a2;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.range-field__inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.effective-parameters dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.effective-parameters dl > div {
+  padding: 10px;
+  border-radius: 10px;
+  background: white;
+}
+
+.effective-parameters dt {
+  color: #7c8798;
+  font-size: 0.75rem;
+}
+
+.effective-parameters dd {
+  margin: 5px 0 0;
+  font-weight: 800;
+}
+
+.validation-list {
+  margin: 9px 0 0;
+  padding-left: 20px;
+}
+
+.validation-list li + li {
+  margin-top: 5px;
+}
+
+.validation-list code {
+  overflow-wrap: anywhere;
 }
 
 .switch-field {
@@ -609,11 +775,12 @@ a {
   margin: 7px 0 0;
   font-size: 1.05rem;
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .timeline {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 0;
   margin: 0;
   padding: 14px 0 0;

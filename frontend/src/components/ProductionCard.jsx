@@ -1,34 +1,53 @@
 import { Link } from "react-router-dom";
-import { formatMetric } from "../utils/format";
+import {
+  formatMetric,
+  formatObjectiveLabel,
+} from "../utils/format";
+import { getJobPresentation } from "../utils/jobPresentation";
 
-export default function ProductionCard({ jobs }) {
-  const latestCandidate = jobs.find(
-    (job) =>
+export default function ProductionCard({ jobs, catalogById = {} }) {
+  const latestCandidateJob = jobs.find((job) => {
+    const model = getJobPresentation(job, catalogById).model;
+    return (
       job.status === "SUCCEEDED" &&
-      job.registered_model_name &&
-      job.registered_model_version,
-  );
+      model?.registered_name &&
+      model?.version
+    );
+  });
+  const candidate = latestCandidateJob
+    ? getJobPresentation(latestCandidateJob, catalogById)
+    : null;
 
   return (
     <section className="panel production-card">
       <div className="panel__header">
         <div>
           <p className="eyebrow">Model lifecycle</p>
-          <h2>Production</h2>
+          <h2>Registered candidates</h2>
         </div>
-        <span className="model-stage-badge">Phase 19</span>
+        <span className="model-stage-badge">Promotion unavailable</span>
       </div>
 
-      {latestCandidate ? (
+      {candidate ? (
         <>
           <p>
-            Latest candidate: <strong>{latestCandidate.registered_model_name}</strong>{" "}
-            version <strong>{latestCandidate.registered_model_version}</strong>.
+            Latest candidate: <strong>{candidate.model.registered_name}</strong>{" "}
+            version <strong>{candidate.model.version}</strong>.
           </p>
           <p className="helper-text">
-            Best validation AUC: {formatMetric(latestCandidate.best_metric)}
+            {candidate.metadata.display_name}
+            {candidate.objective
+              ? ` · ${formatObjectiveLabel(candidate.objective)}: ${
+                  candidate.automlEnabled
+                    ? formatMetric(candidate.objective.value, "N/A")
+                    : "Not tuned"
+                }`
+              : ""}
           </p>
-          <Link className="button button--ghost" to={`/jobs/${latestCandidate.id}`}>
+          <Link
+            className="button button--ghost"
+            to={`/jobs/${latestCandidateJob.id}`}
+          >
             Review candidate
           </Link>
         </>

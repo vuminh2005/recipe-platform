@@ -1,226 +1,229 @@
 import { useState } from "react";
 import { createJob } from "../api/jobs";
-import { buildCatsDogsJobPayload } from "../utils/buildCatsDogsJobPayload";
+import { buildRecipeJobPayload } from "../utils/buildRecipeJobPayload";
+import {
+  createConfigurationFromDefaults,
+  getDefaultRecipe,
+  getEffectiveParametersForDisplay,
+} from "../utils/recipeCatalog";
+import { validateRecipeForm } from "../utils/recipeFormValidation";
+import AutoMLFields from "./AutoMLFields";
+import CatsDogsRecipeFields from "./CatsDogsRecipeFields";
+import CommonJobFields from "./CommonJobFields";
+import RecipeSelector from "./RecipeSelector";
+import TabularRandomForestRecipeFields from "./TabularRandomForestRecipeFields";
+import ValidationErrors from "./ValidationErrors";
 
-const INITIAL_FORM = {
-  name: "cats-dogs-recipe",
-  imageSize: 224,
-  trialEpochs: 2,
-  finalEpochs: 5,
-  batchSize: 8,
-  denseUnits: 128,
-  trainableBackbone: false,
-  automlEnabled: true,
-  maxTrials: 3,
-  parallelTrials: 1,
-  algorithm: "random",
+const RECIPE_RENDERERS = {
+  "cats-dogs": CatsDogsRecipeFields,
+  "tabular-random-forest": TabularRandomForestRecipeFields,
 };
 
-export default function CreateJobForm({ onCreated }) {
-  const [form, setForm] = useState(INITIAL_FORM);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+function UnavailableForm({ loading, error, issues }) {
+  const message = loading
+    ? "Loading public recipes..."
+    : error || "No supported public recipes are available.";
 
-  function updateField(name, value) {
-    setForm((current) => ({
+  return (
+    <section className="panel create-job-form" aria-busy={loading}>
+      <div className="panel__header">
+        <div>
+          <p className="eyebrow">New orchestration run</p>
+          <h2>Create Recipe Job</h2>
+        </div>
+      </div>
+      <div className={`alert alert--${loading ? "info" : "danger"}`}>
+        {message}
+      </div>
+      <ValidationErrors
+        issues={(issues || []).map((item) => ({ path: "catalog", message: item }))}
+        tone="warning"
+      />
+      <button className="button button--primary" type="button" disabled>
+        Run Recipe
+      </button>
+    </section>
+  );
+}
+
+function ReadyCreateJobForm({ recipes, catalogIssues, onCreated }) {
+  const initialRecipe = getDefaultRecipe(recipes);
+  const [selectedRecipeId, setSelectedRecipeId] = useState(
+    initialRecipe.recipe_id,
+  );
+  const [name, setName] = useState(`${initialRecipe.recipe_id}-recipe`);
+  const [configuration, setConfiguration] = useState(() =>
+    createConfigurationFromDefaults(initialRecipe),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [validationIssues, setValidationIssues] = useState([]);
+  const [requestIssues, setRequestIssues] = useState([]);
+
+  const selectedRecipe =
+    recipes.find((recipe) => recipe.recipe_id === selectedRecipeId) ||
+    initialRecipe;
+  const RecipeFields = RECIPE_RENDERERS[selectedRecipe.recipe_id];
+
+  function selectRecipe(recipeId) {
+    const recipe = recipes.find((item) => item.recipe_id === recipeId);
+    if (!recipe || !RECIPE_RENDERERS[recipe.recipe_id]) {
+      return;
+    }
+
+    setSelectedRecipeId(recipe.recipe_id);
+    setConfiguration(createConfigurationFromDefaults(recipe));
+    setValidationIssues([]);
+    setRequestIssues([]);
+  }
+
+  function updateTraining(field, value) {
+    setConfiguration((current) => ({
       ...current,
-      [name]: value,
+      training: {
+        ...current.training,
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateAutoML(field, value) {
+    setConfiguration((current) => ({
+      ...current,
+      automl: {
+        ...current.automl,
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateSearchRange(parameter, endpoint, value) {
+    setConfiguration((current) => ({
+      ...current,
+      automl: {
+        ...current.automl,
+        search_space: {
+          ...current.automl.search_space,
+          [parameter]: {
+            ...current.automl.search_space?.[parameter],
+            [endpoint]: value,
+          },
+        },
+      },
     }));
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
-
     if (submitting) {
       return;
     }
 
-    setSubmitting(true);
-    setError("");
+    const form = { name, configuration };
+    const clientIssues = validateRecipeForm(form, selectedRecipe);
+    setValidationIssues(clientIssues);
+    setRequestIssues([]);
 
-    const payload = buildCatsDogsJobPayload(form);
+    if (clientIssues.length > 0) {
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
+      const payload = buildRecipeJobPayload(form, selectedRecipe);
       const createdJob = await createJob(payload);
       onCreated?.(createdJob);
     } catch (requestError) {
-      setError(requestError.message);
+      setRequestIssues(
+        requestError.issues?.length
+          ? requestError.issues
+          : [{ path: "", message: requestError.message }],
+      );
     } finally {
       setSubmitting(false);
     }
   }
+
+  const effectiveParameters = getEffectiveParametersForDisplay(
+    selectedRecipe,
+    configuration,
+  );
 
   return (
     <form className="panel create-job-form" onSubmit={handleSubmit}>
       <div className="panel__header">
         <div>
           <p className="eyebrow">New orchestration run</p>
-          <h2>Create Cats &amp; Dogs Recipe</h2>
+          <h2>Create Recipe Job</h2>
         </div>
-        <span className="model-pill">MobileNetV2</span>
+        <span className="model-pill">{selectedRecipe.display_name}</span>
       </div>
 
-      <div className="form-section">
-        <h3>Recipe</h3>
+      <RecipeSelector
+        recipes={recipes}
+        selectedRecipe={selectedRecipe}
+        onChange={selectRecipe}
+      />
+      <CommonJobFields name={name} onChange={setName} />
+      <RecipeFields
+        recipe={selectedRecipe}
+        training={configuration.training}
+        onChange={updateTraining}
+      />
+      <AutoMLFields
+        recipe={selectedRecipe}
+        automl={configuration.automl}
+        effectiveParameters={effectiveParameters}
+        onFieldChange={updateAutoML}
+        onRangeChange={updateSearchRange}
+      />
 
-        <div className="form-grid form-grid--two">
-          <label className="field">
-            <span>Recipe name</span>
-            <input
-              required
-              minLength={3}
-              maxLength={100}
-              value={form.name}
-              onChange={(event) => updateField("name", event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Workload</span>
-            <input value="cats-dogs" disabled />
-          </label>
-        </div>
-      </div>
-
-      <div className="form-section">
-        <h3>Training</h3>
-
-        <div className="form-grid">
-          <label className="field">
-            <span>Image size</span>
-            <input
-              type="number"
-              min={32}
-              max={512}
-              value={form.imageSize}
-              onChange={(event) => updateField("imageSize", event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Trial epochs</span>
-            <input
-              type="number"
-              min={1}
-              max={5}
-              value={form.trialEpochs}
-              onChange={(event) => updateField("trialEpochs", event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Final epochs</span>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={form.finalEpochs}
-              onChange={(event) => updateField("finalEpochs", event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Batch size</span>
-            <input
-              type="number"
-              min={1}
-              max={32}
-              value={form.batchSize}
-              onChange={(event) => updateField("batchSize", event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Dense units</span>
-            <input
-              type="number"
-              min={32}
-              max={512}
-              value={form.denseUnits}
-              onChange={(event) => updateField("denseUnits", event.target.value)}
-            />
-          </label>
-
-          <label className="switch-field">
-            <input
-              type="checkbox"
-              checked={form.trainableBackbone}
-              onChange={(event) =>
-                updateField("trainableBackbone", event.target.checked)
-              }
-            />
-            <span>
-              <strong>Trainable backbone</strong>
-              <small>Keep disabled for the first CPU-based demo.</small>
-            </span>
-          </label>
-        </div>
-      </div>
-
-      <div className="form-section">
-        <h3>AutoML</h3>
-
-        <div className="form-grid">
-          <label className="switch-field">
-            <input
-              type="checkbox"
-              checked={form.automlEnabled}
-              onChange={(event) =>
-                updateField("automlEnabled", event.target.checked)
-              }
-            />
-            <span>
-              <strong>Enable Katib tuning</strong>
-              <small>Search learning rate and dropout rate.</small>
-            </span>
-          </label>
-
-          <label className="field">
-            <span>Maximum trials</span>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={form.maxTrials}
-              disabled={!form.automlEnabled}
-              onChange={(event) => updateField("maxTrials", event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Parallel trials</span>
-            <input
-              type="number"
-              min={1}
-              max={4}
-              value={form.parallelTrials}
-              disabled={!form.automlEnabled}
-              onChange={(event) =>
-                updateField("parallelTrials", event.target.value)
-              }
-            />
-          </label>
-
-          <label className="field">
-            <span>Algorithm</span>
-            <select
-              value={form.algorithm}
-              disabled={!form.automlEnabled}
-              onChange={(event) => updateField("algorithm", event.target.value)}
-            >
-              <option value="random">Random search</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      {error ? <div className="alert alert--danger">{error}</div> : null}
+      <ValidationErrors
+        issues={(catalogIssues || []).map((item) => ({
+          path: "catalog",
+          message: item,
+        }))}
+        tone="warning"
+      />
+      <ValidationErrors issues={validationIssues} />
+      <ValidationErrors issues={requestIssues} />
 
       <div className="form-actions">
-        <button className="button button--primary" type="submit" disabled={submitting}>
+        <button
+          className="button button--primary"
+          type="submit"
+          disabled={submitting}
+        >
           {submitting ? "Creating job..." : "Run Recipe"}
         </button>
       </div>
     </form>
+  );
+}
+
+export default function CreateJobForm({
+  recipes,
+  catalogLoading,
+  catalogError,
+  catalogIssues,
+  onCreated,
+}) {
+  if (catalogLoading || catalogError || !recipes?.length) {
+    return (
+      <UnavailableForm
+        loading={catalogLoading}
+        error={catalogError}
+        issues={catalogIssues}
+      />
+    );
+  }
+
+  return (
+    <ReadyCreateJobForm
+      key={recipes.map((recipe) => `${recipe.recipe_id}:${recipe.version}`).join("|")}
+      recipes={recipes}
+      catalogIssues={catalogIssues}
+      onCreated={onCreated}
+    />
   );
 }

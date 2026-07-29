@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getJob } from "../api/jobs";
+import { getRecipe } from "../api/recipes";
 import JobDetails from "../components/JobDetails";
 import JobTimeline from "../components/JobTimeline";
 import { isTerminalStatus } from "../utils/jobStatus";
+import { getRecipeId } from "../utils/jobPresentation";
 
 const DETAIL_POLL_INTERVAL_MS = 5_000;
 
@@ -12,6 +14,9 @@ export default function JobDetailsPage() {
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [catalogById, setCatalogById] = useState({});
+  const recipeId = getRecipeId(job);
+  const hasRecipeSnapshot = Boolean(job?.recipe?.recipe_snapshot);
 
   const refreshJob = useCallback(async () => {
     try {
@@ -39,6 +44,29 @@ export default function JobDetailsPage() {
     return () => window.clearInterval(timer);
   }, [job, refreshJob]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (hasRecipeSnapshot || !recipeId || recipeId === "hello") {
+      return undefined;
+    }
+
+    async function loadHistoricalRecipeMetadata() {
+      try {
+        const recipe = await getRecipe(recipeId);
+        if (!cancelled) {
+          setCatalogById({ [recipe.recipe_id]: recipe });
+        }
+      } catch {
+        // Historical job rendering remains usable without current catalog data.
+      }
+    }
+
+    loadHistoricalRecipeMetadata();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasRecipeSnapshot, recipeId]);
+
   if (loading) {
     return <p className="empty-state">Loading job details...</p>;
   }
@@ -62,7 +90,7 @@ export default function JobDetailsPage() {
 
       {error ? <div className="alert alert--warning">{error}</div> : null}
 
-      <JobDetails job={job} />
+      <JobDetails job={job} catalogById={catalogById} />
       <JobTimeline job={job} />
     </div>
   );

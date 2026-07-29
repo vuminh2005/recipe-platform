@@ -1,20 +1,13 @@
+import { getJobPresentation } from "../utils/jobPresentation";
+
 const SHOW_LOCAL_TOOLS =
   String(import.meta.env.VITE_SHOW_LOCAL_TOOLS).toLowerCase() === "true";
 
 const MLFLOW_UI_URL = import.meta.env.VITE_MLFLOW_UI_URL?.replace(/\/$/, "");
 const KFP_UI_URL = import.meta.env.VITE_KFP_UI_URL?.replace(/\/$/, "");
 const KATIB_UI_URL = import.meta.env.VITE_KATIB_UI_URL?.replace(/\/$/, "");
-const INFERENCE_URL = import.meta.env.VITE_INFERENCE_URL?.replace(/\/$/, "");
 
-function ExternalLink({ href, children, disabled = false }) {
-  if (!href || disabled) {
-    return (
-      <span className="button button--ghost button--disabled" aria-disabled="true">
-        {children}
-      </span>
-    );
-  }
-
+function ExternalLink({ href, children }) {
   return (
     <a className="button button--ghost" href={href} target="_blank" rel="noreferrer">
       {children}
@@ -22,16 +15,30 @@ function ExternalLink({ href, children, disabled = false }) {
   );
 }
 
-export default function ExternalToolLinks({ job }) {
+export default function ExternalToolLinks({ job, catalogById = {} }) {
+  const { externalIds } = getJobPresentation(job, catalogById);
   const kfpRunUrl =
-    SHOW_LOCAL_TOOLS && KFP_UI_URL && job.kfp_run_id
-      ? `${KFP_UI_URL}/#/runs/details/${job.kfp_run_id}`
+    SHOW_LOCAL_TOOLS && KFP_UI_URL && externalIds.kfp_run_id
+      ? `${KFP_UI_URL}/#/runs/details/${externalIds.kfp_run_id}`
       : "";
-
   const katibUrl =
-    SHOW_LOCAL_TOOLS && KATIB_UI_URL && job.katib_experiment_name
+    SHOW_LOCAL_TOOLS && KATIB_UI_URL && externalIds.katib_experiment_id
       ? KATIB_UI_URL
       : "";
+  const mlflowUrl =
+    MLFLOW_UI_URL &&
+    (externalIds.mlflow_parent_run_id || externalIds.mlflow_run_id)
+      ? MLFLOW_UI_URL
+      : "";
+  const links = [
+    kfpRunUrl && { href: kfpRunUrl, label: "Open KFP Run" },
+    katibUrl && { href: katibUrl, label: "Open Katib" },
+    mlflowUrl && { href: mlflowUrl, label: "Open MLflow" },
+  ].filter(Boolean);
+
+  if (links.length === 0) {
+    return null;
+  }
 
   return (
     <section className="panel">
@@ -43,23 +50,17 @@ export default function ExternalToolLinks({ job }) {
       </div>
 
       <div className="tool-links">
-        <ExternalLink href={kfpRunUrl} disabled={!job.kfp_run_id}>
-          Open KFP Run
-        </ExternalLink>
-
-        <ExternalLink href={katibUrl} disabled={!job.katib_experiment_name}>
-          Open Katib
-        </ExternalLink>
-
-        <ExternalLink href={MLFLOW_UI_URL}>Open MLflow</ExternalLink>
-
-        <ExternalLink href={INFERENCE_URL}>Open Inference</ExternalLink>
+        {links.map((link) => (
+          <ExternalLink href={link.href} key={link.label}>
+            {link.label}
+          </ExternalLink>
+        ))}
       </div>
 
       {SHOW_LOCAL_TOOLS ? (
         <p className="helper-text">
-          KFP and Katib links point to localhost. They work only on a machine with
-          the required port-forwards running.
+          KFP and Katib links point to configured local interfaces and require
+          the corresponding port-forwards.
         </p>
       ) : null}
     </section>

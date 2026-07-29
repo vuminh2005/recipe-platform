@@ -1,10 +1,11 @@
-import { formatKey, formatMetric } from "../utils/format";
+import { formatJsonValue, formatKey } from "../utils/format";
 
 export default function MetricsGrid({
   metrics,
-  emptyMessage = "No metrics have been recorded yet.",
+  emptyMessage = "No values have been recorded yet.",
 }) {
-  const entries = Object.entries(metrics || {});
+  const entries =
+    metrics && typeof metrics === "object" ? Object.entries(metrics) : [];
 
   if (entries.length === 0) {
     return <p className="empty-state">{emptyMessage}</p>;
@@ -15,7 +16,7 @@ export default function MetricsGrid({
       {entries.map(([key, value]) => (
         <div className="metric-card" key={key}>
           <dt>{formatKey(key)}</dt>
-          <dd>{typeof value === "number" ? formatMetric(value) : String(value)}</dd>
+          <dd>{formatJsonValue(value)}</dd>
         </div>
       ))}
     </dl>

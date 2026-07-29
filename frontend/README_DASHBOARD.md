@@ -13,13 +13,18 @@ npm install react-router-dom
 Copy the provided `src/` directory and environment files into the existing
 Vite frontend. Remove or stop importing the old `App.css` and `index.css`.
 
-## 3. Configure inference URL
+## 3. Configure the backend and optional tool links
 
-Set `VITE_INFERENCE_URL` in `.env.development` and `.env.production` when the
-inference service URL is known. Leave it blank for now.
+Set `VITE_API_BASE_URL` to the Recipe Platform backend. Optional
+`VITE_MLFLOW_UI_URL`, `VITE_KFP_UI_URL`, and `VITE_KATIB_UI_URL` values enable
+links for integration IDs that are actually present on a job.
 
 Never place tokens, R2 credentials, database URLs, or other secrets in a
 `VITE_*` variable.
+
+The create-job form loads public recipe metadata from `GET /api/recipes`.
+Job history remains readable when the catalog is unavailable, but new
+submissions are disabled until a valid supported catalog response is loaded.
 
 ## 4. Local development
 

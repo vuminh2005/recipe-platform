@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test src/api/*.test.js src/utils/*.test.js",
+    "test:catalog-contract": "node scripts/recipeCatalogContract.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

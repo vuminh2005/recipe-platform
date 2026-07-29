@@ -1,8 +1,23 @@
 import { Link } from "react-router-dom";
+import {
+  formatDate,
+  formatMetric,
+  formatObjectiveLabel,
+} from "../utils/format";
+import { getJobPresentation } from "../utils/jobPresentation";
 import JobStatusBadge from "./JobStatusBadge";
-import { formatDate, formatMetric } from "../utils/format";
 
-export default function JobTable({ jobs, loading }) {
+function objectiveValue(presentation) {
+  if (!presentation.objective) {
+    return "N/A";
+  }
+  if (!presentation.automlEnabled) {
+    return "Not tuned";
+  }
+  return formatMetric(presentation.objective.value, "N/A");
+}
+
+export default function JobTable({ jobs, loading, catalogById = {} }) {
   if (loading && jobs.length === 0) {
     return <p className="empty-state">Loading platform jobs...</p>;
   }
@@ -17,9 +32,10 @@ export default function JobTable({ jobs, loading }) {
         <thead>
           <tr>
             <th>Name</th>
-            <th>Workload</th>
+            <th>Recipe</th>
+            <th>Version</th>
             <th>Status</th>
-            <th>Best AUC</th>
+            <th>Objective</th>
             <th>Model</th>
             <th>Created</th>
             <th aria-label="Actions" />
@@ -28,27 +44,45 @@ export default function JobTable({ jobs, loading }) {
 
         <tbody>
           {jobs.map((job) => {
-            const modelLabel = job.registered_model_name
-              ? `${job.registered_model_name} · v${
-                  job.registered_model_version || "?"
-                }`
+            const presentation = getJobPresentation(job, catalogById);
+            const registeredModel = presentation.model?.registered_name;
+            const modelLabel = registeredModel
+              ? `${registeredModel} · v${presentation.model.version || "?"}`
               : "—";
 
             return (
               <tr key={job.id}>
                 <td>
-                  <strong>{job.recipe?.name || "Unnamed recipe"}</strong>
+                  <strong>{presentation.name}</strong>
                   <small className="table-subtitle">{job.id.slice(0, 8)}</small>
                 </td>
-                <td>{job.recipe?.workload || "—"}</td>
+                <td>
+                  <strong>{presentation.metadata.display_name}</strong>
+                  <small className="table-subtitle">
+                    {presentation.metadata.recipe_id || "Unknown"}
+                  </small>
+                </td>
+                <td>{presentation.metadata.recipe_version || "—"}</td>
                 <td>
                   <JobStatusBadge status={job.status} />
                 </td>
-                <td>{formatMetric(job.best_metric)}</td>
+                <td>
+                  <strong>
+                    {presentation.objective
+                      ? formatObjectiveLabel(presentation.objective)
+                      : "N/A"}
+                  </strong>
+                  <small className="table-subtitle">
+                    {objectiveValue(presentation)}
+                  </small>
+                </td>
                 <td>{modelLabel}</td>
                 <td>{formatDate(job.created_at)}</td>
                 <td>
-                  <Link className="button button--small button--ghost" to={`/jobs/${job.id}`}>
+                  <Link
+                    className="button button--small button--ghost"
+                    to={`/jobs/${job.id}`}
+                  >
                     View details
                   </Link>
                 </td>

@@ -1,3 +1,8 @@
+import {
+  getJobPresentation,
+  getRecipeId,
+} from "./jobPresentation.js";
+
 export const TERMINAL_JOB_STATUSES = new Set(["SUCCEEDED", "FAILED"]);
 
 export const JOB_STATUS_META = {
@@ -14,7 +19,7 @@ export const JOB_STATUS_META = {
   RUNNING: {
     label: "Running",
     tone: "info",
-    description: "The legacy workload is running.",
+    description: "KFP is running the internal smoke workflow.",
   },
   TUNING: {
     label: "Tuning",
@@ -58,43 +63,77 @@ export function isTerminalStatus(status) {
 }
 
 export function getTimelineSteps(job) {
-  if (job?.recipe?.workload === "hello") {
+  if (getRecipeId(job) === "hello") {
     return ["PENDING", "CLAIMED", "RUNNING", "SUCCEEDED"];
   }
 
-  return [
-    "PENDING",
-    "CLAIMED",
-    "TUNING",
-    "TRAINING",
-    "REGISTERING",
-    "SUCCEEDED",
-  ];
+  const steps = ["PENDING", "CLAIMED"];
+  if (getJobPresentation(job).automlEnabled) {
+    steps.push("TUNING");
+  }
+  steps.push("TRAINING", "REGISTERING", "SUCCEEDED");
+  return steps;
 }
 
-export function getTimelineState(step, currentStatus, steps) {
-  if (currentStatus === "FAILED") {
-    if (step === "PENDING" || step === "CLAIMED") {
+export function inferFailureStage(job, steps = getTimelineSteps(job)) {
+  const presentation = getJobPresentation(job);
+  const { externalIds, model, finalMetrics, bestParams } = presentation;
+
+  if (
+    externalIds.mlflow_run_id ||
+    model ||
+    (finalMetrics && Object.keys(finalMetrics).length > 0)
+  ) {
+    return steps.includes("REGISTERING") ? "REGISTERING" : "TRAINING";
+  }
+
+  if (externalIds.kfp_run_id) {
+    return steps.includes("TRAINING") ? "TRAINING" : "CLAIMED";
+  }
+
+  if (
+    steps.includes("TUNING") &&
+    (externalIds.katib_experiment_id || bestParams)
+  ) {
+    return "TUNING";
+  }
+
+  if (job?.agent_id) {
+    return "CLAIMED";
+  }
+
+  return "PENDING";
+}
+
+export function getTimelineState(step, job, steps) {
+  if (job?.status === "FAILED") {
+    const failureStage = inferFailureStage(job, steps);
+    const failureIndex = steps.indexOf(failureStage);
+    const stepIndex = steps.indexOf(step);
+
+    if (stepIndex < failureIndex) {
       return "complete";
     }
-
+    if (step === failureStage) {
+      return "failed";
+    }
     return "upcoming";
   }
 
-  const currentIndex = steps.indexOf(currentStatus);
+  const currentIndex = steps.indexOf(job?.status);
   const stepIndex = steps.indexOf(step);
 
+  if (job?.status === "SUCCEEDED") {
+    return "complete";
+  }
   if (currentIndex === -1) {
     return "upcoming";
   }
-
   if (stepIndex < currentIndex) {
     return "complete";
   }
-
   if (stepIndex === currentIndex) {
-    return currentStatus === "SUCCEEDED" ? "complete" : "current";
+    return "current";
   }
-
   return "upcoming";
 }

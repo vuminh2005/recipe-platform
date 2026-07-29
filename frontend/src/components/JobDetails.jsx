@@ -1,12 +1,15 @@
-import ExternalToolLinks from "./ExternalToolLinks";
-import JobStatusBadge from "./JobStatusBadge";
-import MetricsGrid from "./MetricsGrid";
 import {
   formatBoolean,
   formatDate,
+  formatJsonValue,
+  formatKey,
   formatMetric,
-  truncateMiddle,
+  formatObjectiveLabel,
 } from "../utils/format";
+import { getJobPresentation } from "../utils/jobPresentation";
+import ExternalToolLinks from "./ExternalToolLinks";
+import JobStatusBadge from "./JobStatusBadge";
+import MetricsGrid from "./MetricsGrid";
 
 function DefinitionList({ entries }) {
   return (
@@ -21,37 +24,58 @@ function DefinitionList({ entries }) {
   );
 }
 
-export default function JobDetails({ job }) {
-  const training = job.recipe?.training || {};
-  const automl = job.recipe?.automl || {};
-  const recipeConfiguration = [
-    ["Workload", job.recipe?.workload],
-    ["Model", training.model],
-    ["Image size", training.image_size],
-    ["Trial epochs", training.trial_epochs],
-    ["Final epochs", training.final_epochs],
-    ["Batch size", training.batch_size],
-    ["Dense units", training.dense_units],
-    [
-      "Trainable backbone",
-      formatBoolean(Boolean(training.trainable_backbone)),
-    ],
-    ["AutoML enabled", formatBoolean(Boolean(automl.enabled))],
-    ["Max trials", automl.max_trials],
-    ["Parallel trials", automl.parallel_trials],
-    ["Algorithm", automl.algorithm],
-  ];
+function SearchSpaceGrid({ searchSpace }) {
+  const ranges = Object.fromEntries(
+    Object.entries(searchSpace || {}).map(([name, range]) => [
+      name,
+      range && typeof range === "object"
+        ? `${formatJsonValue(range.min)} – ${formatJsonValue(range.max)}`
+        : range,
+    ]),
+  );
 
-  if (training.epochs != null) {
-    recipeConfiguration.push(["Legacy epochs (ignored)", training.epochs]);
+  return (
+    <MetricsGrid
+      metrics={ranges}
+      emptyMessage="No search-space ranges were recorded."
+    />
+  );
+}
+
+function objectiveValue(presentation) {
+  if (!presentation.objective) {
+    return "N/A";
   }
+  if (!presentation.automlEnabled) {
+    return "Not tuned";
+  }
+  return formatMetric(presentation.objective.value, "N/A");
+}
+
+export default function JobDetails({ job, catalogById = {} }) {
+  const presentation = getJobPresentation(job, catalogById);
+  const {
+    metadata,
+    configuration,
+    externalIds,
+    model,
+    effectiveFinalParameters,
+  } = presentation;
+  const training = configuration.training || {};
+  const automl = configuration.automl || {};
+  const isHello = metadata.recipe_id === "hello";
+  const hasMlflowData = Boolean(
+    externalIds.mlflow_parent_run_id ||
+      externalIds.mlflow_run_id ||
+      model?.uri,
+  );
 
   return (
     <div className="details-layout">
       <section className="panel details-hero">
         <div>
           <p className="eyebrow">Platform Job</p>
-          <h1>{job.recipe?.name || "Unnamed recipe"}</h1>
+          <h1>{presentation.name}</h1>
           <p className="job-id">{job.id}</p>
         </div>
 
@@ -69,77 +93,154 @@ export default function JobDetails({ job }) {
 
       <section className="details-grid">
         <section className="detail-card">
-          <h3>Recipe configuration</h3>
-          <DefinitionList entries={recipeConfiguration} />
-        </section>
-
-        <section className="detail-card">
-          <h3>Katib tuning</h3>
+          <h3>Recipe</h3>
           <DefinitionList
             entries={[
-              ["Experiment", job.katib_experiment_name],
-              ["Best objective", formatMetric(job.best_metric)],
+              ["Display name", metadata.display_name],
+              ["Recipe ID", metadata.recipe_id],
+              ["Version", metadata.recipe_version],
+              ["Task type", metadata.task_type && formatKey(metadata.task_type)],
+              ["Framework", metadata.framework && formatKey(metadata.framework)],
+              ["Model", metadata.model],
             ]}
           />
-          <MetricsGrid
-            metrics={job.best_params}
-            emptyMessage="Best parameters will appear after Katib succeeds."
-          />
         </section>
+
+        {!isHello ? (
+          <section className="detail-card">
+            <h3>Training configuration</h3>
+            <MetricsGrid
+              metrics={training}
+              emptyMessage="No normalized training configuration is available."
+            />
+          </section>
+        ) : null}
+
+        {!isHello ? (
+          <section className="detail-card detail-card--wide">
+            <h3>AutoML configuration</h3>
+            <DefinitionList
+              entries={[
+                ["Enabled", formatBoolean(presentation.automlEnabled)],
+                ["Maximum trials", automl.max_trials],
+                ["Parallel trials", automl.parallel_trials],
+                ["Algorithm", automl.algorithm],
+              ]}
+            />
+            {presentation.automlEnabled ? (
+              <SearchSpaceGrid searchSpace={automl.search_space} />
+            ) : (
+              <>
+                <p className="helper-text">
+                  Katib was skipped. Final parameters came from the normalized
+                  recipe configuration.
+                </p>
+                <MetricsGrid
+                  metrics={effectiveFinalParameters}
+                  emptyMessage="Effective final parameters are unavailable for this historical job."
+                />
+              </>
+            )}
+          </section>
+        ) : null}
+
+        {presentation.objective ? (
+          <section className="detail-card">
+            <h3>Objective</h3>
+            <DefinitionList
+              entries={[
+                ["Metric", formatObjectiveLabel(presentation.objective)],
+                ["Direction", presentation.objective.direction],
+                ["Value", objectiveValue(presentation)],
+              ]}
+            />
+          </section>
+        ) : null}
+
+        {metadata.supports_automl ? (
+          <section className="detail-card">
+            <h3>Katib tuning</h3>
+            {presentation.automlEnabled ? (
+              <>
+                <DefinitionList
+                  entries={[
+                    [
+                      "Experiment",
+                      externalIds.katib_experiment_id || "Not available yet",
+                    ],
+                  ]}
+                />
+                <MetricsGrid
+                  metrics={presentation.bestParams}
+                  emptyMessage="Best parameters are not available yet."
+                />
+              </>
+            ) : (
+              <p className="empty-state">
+                Not tuned. AutoML was disabled for this job.
+              </p>
+            )}
+          </section>
+        ) : null}
 
         <section className="detail-card">
           <h3>KFP execution</h3>
           <DefinitionList
             entries={[
-              ["KFP run ID", truncateMiddle(job.kfp_run_id, 16)],
+              ...(externalIds.kfp_run_id
+                ? [["KFP run ID", externalIds.kfp_run_id]]
+                : []),
               ["Agent ID", job.agent_id],
             ]}
           />
         </section>
 
-        <section className="detail-card">
-          <h3>MLflow tracking</h3>
-          <DefinitionList
-            entries={[
-              [
-                "Parent run ID",
-                truncateMiddle(job.mlflow_parent_run_id, 16),
-              ],
-              [
-                "Final run ID",
-                truncateMiddle(job.mlflow_final_run_id, 16),
-              ],
-              ["Model URI", job.model_uri],
-            ]}
-          />
-        </section>
+        {!isHello && hasMlflowData ? (
+          <section className="detail-card">
+            <h3>MLflow tracking</h3>
+            <DefinitionList
+              entries={[
+                ...(externalIds.mlflow_parent_run_id
+                  ? [["Parent run ID", externalIds.mlflow_parent_run_id]]
+                  : []),
+                ...(externalIds.mlflow_run_id
+                  ? [["Final run ID", externalIds.mlflow_run_id]]
+                  : []),
+                ...(model?.uri ? [["Model URI", model.uri]] : []),
+              ]}
+            />
+          </section>
+        ) : null}
 
-        <section className="detail-card">
-          <div className="detail-card__title-row">
-            <h3>Model Registry</h3>
-            {job.registered_model_version ? (
-              <span className="model-stage-badge">Candidate</span>
-            ) : null}
-          </div>
+        {!isHello && model ? (
+          <section className="detail-card">
+            <div className="detail-card__title-row">
+              <h3>Model Registry</h3>
+              {model.version ? (
+                <span className="model-stage-badge">Candidate</span>
+              ) : null}
+            </div>
+            <DefinitionList
+              entries={[
+                ["Registered model", model.registered_name],
+                ["Version", model.version],
+              ]}
+            />
+          </section>
+        ) : null}
 
-          <DefinitionList
-            entries={[
-              ["Registered model", job.registered_model_name],
-              ["Version", job.registered_model_version],
-            ]}
-          />
-        </section>
-
-        <section className="detail-card detail-card--wide">
-          <h3>Final metrics</h3>
-          <MetricsGrid
-            metrics={job.final_metrics}
-            emptyMessage="Final evaluation metrics are not available yet."
-          />
-        </section>
+        {!isHello ? (
+          <section className="detail-card detail-card--wide">
+            <h3>Final metrics</h3>
+            <MetricsGrid
+              metrics={presentation.finalMetrics}
+              emptyMessage="Final evaluation metrics are not available yet."
+            />
+          </section>
+        ) : null}
       </section>
 
-      <ExternalToolLinks job={job} />
+      <ExternalToolLinks job={job} catalogById={catalogById} />
     </div>
   );
 }

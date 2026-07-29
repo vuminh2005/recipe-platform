@@ -8,6 +8,10 @@ const dateFormatter = new Intl.DateTimeFormat("vi-VN", {
 });
 
 export function formatNumber(value, fallback = "—") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
   const numericValue = Number(value);
 
   if (!Number.isFinite(numericValue)) {
@@ -18,6 +22,10 @@ export function formatNumber(value, fallback = "—") {
 }
 
 export function formatMetric(value, fallback = "—") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
   const numericValue = Number(value);
 
   if (!Number.isFinite(numericValue)) {
@@ -28,6 +36,10 @@ export function formatMetric(value, fallback = "—") {
 }
 
 export function formatPercent(value, fallback = "—") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
   const numericValue = Number(value);
 
   if (!Number.isFinite(numericValue)) {
@@ -59,6 +71,41 @@ export function formatKey(key) {
   return String(key)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+export function formatObjectiveLabel(objective) {
+  if (!objective?.name) {
+    return "Objective";
+  }
+
+  const direction =
+    objective.direction === "maximize"
+      ? "↑"
+      : objective.direction === "minimize"
+        ? "↓"
+        : "";
+
+  return `${objective.name}${direction ? ` ${direction}` : ""}`;
+}
+
+export function formatJsonValue(value, fallback = "—") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  if (typeof value === "number") {
+    return formatMetric(value, fallback);
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
 }
 
 export function truncateMiddle(value, visibleCharacters = 12) {
