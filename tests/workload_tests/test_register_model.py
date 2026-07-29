@@ -123,6 +123,8 @@ class RegisterModelIdempotencyTests(unittest.TestCase):
                 "recipe_version": "1.0",
                 "katib_experiment_id": "cats-dogs-hpo-12345678",
                 "model_architecture": "MobileNetV2",
+                "dataset_id": "cats-dogs-v1",
+                "dataset_checksum": "abc123",
             },
             platform_job_id="job-1",
             mlflow_run_id="run-1",
@@ -142,6 +144,8 @@ class RegisterModelIdempotencyTests(unittest.TestCase):
             "binary_image_classification",
         )
         self.assertEqual(tags["model.architecture"], "MobileNetV2")
+        self.assertEqual(tags["dataset.id"], "cats-dogs-v1")
+        self.assertEqual(tags["dataset.checksum"], "abc123")
 
 
 if __name__ == "__main__":

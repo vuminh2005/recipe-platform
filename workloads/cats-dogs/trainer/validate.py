@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import os
 from pathlib import Path
 
 from trainer.data import collect_image_paths, prepare_dataset
+from trainer.observability import (
+    CATS_DOGS_DATASET_ID,
+    DATASET_SOURCE_TYPE,
+    build_dataset_metadata,
+    safe_uri_metadata,
+)
 
 LOGGER = logging.getLogger("cats_dogs_validate")
 EXPECTED_CLASSES = ("cats", "dogs")
@@ -30,23 +35,6 @@ def required_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
-
-
-def dataset_fingerprint(root: Path) -> str:
-    """Build a deterministic SHA-256 over relative paths, sizes and bytes."""
-    digest = hashlib.sha256()
-    files = sorted(path for path in root.rglob("*") if path.is_file())
-
-    for path in files:
-        relative = path.relative_to(root).as_posix().encode("utf-8")
-        digest.update(len(relative).to_bytes(4, "big"))
-        digest.update(relative)
-        digest.update(path.stat().st_size.to_bytes(8, "big"))
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-
-    return digest.hexdigest()
 
 
 def validate_split(root: Path, split: str) -> dict[str, object]:
@@ -94,6 +82,17 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     args = parse_args()
     dataset_uri = required_env("DATASET_URI")
+    source = safe_uri_metadata(
+        dataset_uri,
+        source_type=DATASET_SOURCE_TYPE,
+        identifier=CATS_DOGS_DATASET_ID,
+    )
+    LOGGER.info(
+        "Dataset source configured | type=%s | scheme=%s | id=%s",
+        source["source_type"],
+        source["scheme"],
+        source["identifier"],
+    )
 
     dataset_root = prepare_dataset(
         dataset_uri,
@@ -102,12 +101,12 @@ def main() -> None:
 
     train_summary = validate_split(dataset_root, "train")
     test_summary = validate_split(dataset_root, "test")
-    fingerprint = dataset_fingerprint(dataset_root)
+    dataset_metadata = build_dataset_metadata(dataset_root)
 
     result = {
         "valid": True,
-        "dataset_uri": dataset_uri,
-        "dataset_fingerprint_sha256": fingerprint,
+        **dataset_metadata,
+        "dataset_fingerprint_sha256": dataset_metadata["dataset_checksum"],
         "train": train_summary,
         "test": test_summary,
     }
@@ -124,7 +123,7 @@ def main() -> None:
         "Dataset valid | train=%s | test=%s | sha256=%s",
         train_summary["image_count"],
         test_summary["image_count"],
-        fingerprint,
+        dataset_metadata["dataset_checksum"],
     )
 
 

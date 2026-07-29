@@ -116,7 +116,7 @@ deploymentSpec:
         command:
         - sh
         - -c
-        image: docker.io/library/cats-dogs-trainer:0.5
+        image: docker.io/library/cats-dogs-trainer:0.7
         resources:
           cpuLimit: 6.0
           cpuRequest: 2.0
@@ -153,7 +153,7 @@ deploymentSpec:
         command:
         - sh
         - -c
-        image: docker.io/library/cats-dogs-trainer:0.5
+        image: docker.io/library/cats-dogs-trainer:0.7
         resources:
           cpuLimit: 1.0
           cpuRequest: 0.25
@@ -172,7 +172,7 @@ deploymentSpec:
         - python
         - -m
         - trainer.validate
-        image: docker.io/library/cats-dogs-trainer:0.5
+        image: docker.io/library/cats-dogs-trainer:0.7
         resources:
           cpuLimit: 2.0
           cpuRequest: 0.5

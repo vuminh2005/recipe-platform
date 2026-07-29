@@ -4,7 +4,7 @@ from kfp import compiler, dsl, kubernetes
 from kfp.dsl import OutputPath
 
 
-TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.5"
+TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.7"
 PLATFORM_SECRET = "cats-dogs-platform-secrets"
 
 SECRET_ENV = {

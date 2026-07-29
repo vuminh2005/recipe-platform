@@ -320,14 +320,14 @@ and verify it against a fresh `/tmp` compile:
 ```
 
 The Cats & Dogs trainer image is
-`docker.io/library/cats-dogs-trainer:0.5`. Its Katib and KFP Pods use
+`docker.io/library/cats-dogs-trainer:0.7`. Its Katib and KFP Pods use
 `imagePullPolicy: Never`, so build and import the exact tag before a live run:
 
 ```bash
-docker build -t docker.io/library/cats-dogs-trainer:0.5 workloads/cats-dogs
-docker save -o /tmp/cats-dogs-trainer-0.5.tar docker.io/library/cats-dogs-trainer:0.5
-sudo k3s ctr images import /tmp/cats-dogs-trainer-0.5.tar
-sudo k3s ctr images list | grep -F docker.io/library/cats-dogs-trainer:0.5
+docker build -t docker.io/library/cats-dogs-trainer:0.7 workloads/cats-dogs
+docker save -o /tmp/cats-dogs-trainer-0.7.tar docker.io/library/cats-dogs-trainer:0.7
+sudo k3s ctr images import /tmp/cats-dogs-trainer-0.7.tar
+sudo k3s ctr images list | grep -F docker.io/library/cats-dogs-trainer:0.7
 ```
 
 The Tabular trainer image is
@@ -356,7 +356,7 @@ images, secrets, datasets, Katib, KFP, or MLflow are available in K3s.
 Deploy or restart the Backend before the Agent because current Agents publish
 incremental `result_patch` updates. A safe demo order is:
 
-1. Build and import Cats & Dogs `0.5` and Tabular `1.0` images.
+1. Build and import Cats & Dogs `0.7` and Tabular `1.0` images.
 2. Verify all three tracked compiled pipeline packages.
 3. Configure a non-default `AGENT_TOKEN` on Backend and Agent.
 4. Start or deploy the Backend on localhost or a trusted private network.

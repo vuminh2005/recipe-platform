@@ -52,7 +52,7 @@ class KatibManifestTests(unittest.TestCase):
         ).encode()
         self.assertEqual(
             hashlib.sha256(canonical).hexdigest(),
-            "399b872a65efa2dc2f6ca361bce71c485fcecf15b774ba787be88f779e7f78c6",
+            "f2c1d8c431d91ea461cd6cc51e3b0c4b822502db569c71a9e51c86cadf2c02a2",
         )
 
     def test_configurable_fields_reach_the_manifest(self) -> None:

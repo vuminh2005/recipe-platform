@@ -63,7 +63,9 @@ def wait_for_mlflow(tracking_uri: str) -> None:
             pass
         if attempt < 59:
             time.sleep(2)
-    raise RuntimeError(f"MLflow did not become ready at {health_url}")
+    raise RuntimeError(
+        "The configured MLflow Tracking Server did not become ready"
+    )
 
 
 def read_result(path_value: str) -> dict[str, Any]:
@@ -220,6 +222,8 @@ def build_version_tags(
             "model_architecture",
             "MobileNetV2",
         ),
+        "dataset.id": result.get("dataset_id"),
+        "dataset.checksum": result.get("dataset_checksum"),
         "inference.image_size": result.get("image_size"),
         "inference.num_channels": result.get("num_channels", 3),
         "inference.threshold": result.get("final_threshold"),

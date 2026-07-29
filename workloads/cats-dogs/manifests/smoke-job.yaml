@@ -26,7 +26,7 @@ spec:
         - name: training-container
 
           # Tên image phải trùng với image đã import vào K3s.
-          image: docker.io/library/cats-dogs-trainer:0.5
+          image: docker.io/library/cats-dogs-trainer:0.7
 
           # Chỉ sử dụng image local đã import vào containerd.
           imagePullPolicy: Never

@@ -45,6 +45,13 @@ from trainer.data import (
 )
 from trainer.metrics import optimize_threshold
 from trainer.model import build_model
+from trainer.observability import (
+    CATS_DOGS_DATASET_ID,
+    DATASET_SOURCE_TYPE,
+    build_dataset_metadata,
+    managed_mlflow_run,
+    safe_uri_metadata,
+)
 
 
 LOGGER = logging.getLogger("cats_dogs_trainer")
@@ -182,7 +189,7 @@ def wait_for_mlflow_server(
 ) -> None:
     """Wake a sleeping Render service and wait until MLflow responds."""
     health_url = f"{tracking_uri.rstrip('/')}/health"
-    last_error: Exception | None = None
+    last_error_summary = "no response"
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -196,23 +203,21 @@ def wait_for_mlflow_server(
                 )
                 return
 
-            last_error = RuntimeError(
-                f"HTTP {response.status_code}: {response.text[:200]}"
-            )
+            last_error_summary = f"HTTP {response.status_code}"
         except requests.RequestException as exc:
-            last_error = exc
+            last_error_summary = type(exc).__name__
 
         LOGGER.warning(
             "MLflow not ready (attempt %d/%d): %s",
             attempt,
             max_attempts,
-            last_error,
+            last_error_summary,
         )
         time.sleep(sleep_seconds)
 
     raise RuntimeError(
-        f"Cannot connect to MLflow Tracking Server: {tracking_uri}"
-    ) from last_error
+        "Cannot connect to the configured MLflow Tracking Server"
+    )
 
 
 def configure_mlflow() -> dict[str, str | None]:
@@ -224,7 +229,6 @@ def configure_mlflow() -> dict[str, str | None]:
     experiment = mlflow.set_experiment(experiment_name)
 
     config: dict[str, str | None] = {
-        "tracking_uri": tracking_uri,
         "experiment_name": experiment_name,
         "experiment_id": experiment.experiment_id,
         "registered_model_name": os.getenv("MLFLOW_REGISTERED_MODEL_NAME"),
@@ -238,7 +242,14 @@ def configure_mlflow() -> dict[str, str | None]:
     }
 
     LOGGER.info("MLflow version: %s", mlflow.__version__)
-    LOGGER.info("MLflow tracking URI: %s", tracking_uri)
+    tracking = safe_uri_metadata(
+        tracking_uri,
+        source_type="tracking_service",
+    )
+    LOGGER.info(
+        "MLflow tracking configured | scheme=%s",
+        tracking["scheme"],
+    )
     LOGGER.info(
         "MLflow experiment: %s | experiment_id=%s",
         experiment_name,
@@ -254,6 +265,7 @@ def build_run_tags(
     mlflow_config: dict[str, str | None],
     recipe_id: str,
     recipe_version: str,
+    dataset_metadata: dict[str, str | int],
 ) -> dict[str, str]:
     tags = {
         "platform.job_id": str(mlflow_config["platform_job_id"]),
@@ -263,6 +275,8 @@ def build_run_tags(
         "model.framework": "tensorflow_keras",
         "model.task_type": "binary_image_classification",
         "model.architecture": "MobileNetV2",
+        "dataset.id": str(dataset_metadata["dataset_id"]),
+        "dataset.checksum": str(dataset_metadata["dataset_checksum"]),
     }
 
     parent_run_id = mlflow_config.get("parent_run_id")
@@ -317,7 +331,7 @@ def create_callbacks(
 def log_common_params(
     *,
     args: argparse.Namespace,
-    dataset_uri: str,
+    dataset_metadata: dict[str, str | int],
     train_count: int,
     validation_count: int,
     test_count: int | None,
@@ -336,7 +350,7 @@ def log_common_params(
         "validation_ratio": validation_ratio,
         "train_image_count": train_count,
         "validation_image_count": validation_count,
-        "dataset_uri": dataset_uri,
+        **dataset_metadata,
         "seed": SEED,
     }
 
@@ -412,8 +426,8 @@ def train_model(
 def run_trial(
     *,
     args: argparse.Namespace,
-    dataset_uri: str,
     dataset_root: Path,
+    dataset_metadata: dict[str, str | int],
     output_dir: Path,
     mlflow_config: dict[str, str | None],
 ) -> None:
@@ -429,16 +443,18 @@ def run_trial(
         mlflow_config=mlflow_config,
         recipe_id=args.recipe_id,
         recipe_version=args.recipe_version,
+        dataset_metadata=dataset_metadata,
     )
     trial_name = str(mlflow_config["katib_trial_name"])
 
-    with mlflow.start_run(
+    with managed_mlflow_run(
+        mlflow,
         run_name=f"katib-trial-{trial_name}",
         tags=tags,
     ) as run:
         log_common_params(
             args=args,
-            dataset_uri=dataset_uri,
+            dataset_metadata=dataset_metadata,
             train_count=len(trial_train_df),
             validation_count=len(trial_validation_df),
             test_count=None,
@@ -551,8 +567,8 @@ def save_final_artifacts(
 def run_final(
     *,
     args: argparse.Namespace,
-    dataset_uri: str,
     dataset_root: Path,
+    dataset_metadata: dict[str, str | int],
     output_dir: Path,
     mlflow_config: dict[str, str | None],
 ) -> None:
@@ -576,16 +592,18 @@ def run_final(
         mlflow_config=mlflow_config,
         recipe_id=args.recipe_id,
         recipe_version=args.recipe_version,
+        dataset_metadata=dataset_metadata,
     )
     platform_job_id = str(mlflow_config["platform_job_id"])
 
-    with mlflow.start_run(
+    with managed_mlflow_run(
+        mlflow,
         run_name=f"final-training-{platform_job_id[:12]}",
         tags=tags,
     ) as run:
         log_common_params(
             args=args,
-            dataset_uri=dataset_uri,
+            dataset_metadata=dataset_metadata,
             train_count=len(final_train_df),
             validation_count=len(final_validation_df),
             test_count=len(test_df),
@@ -653,6 +671,7 @@ def run_final(
             "class_to_id": {"cats": 0, "dogs": 1},
             "id_to_class": {"0": "cat", "1": "dog"},
             "probability_meaning": "prob_dog",
+            "dataset": dataset_metadata,
             "best_config": {
                 "learning_rate": args.learning_rate,
                 "dropout_rate": args.dropout_rate,
@@ -751,6 +770,7 @@ def run_final(
             "test_f1": test_f1,
             "test_auc": test_auc,
             "best_epoch": best_epoch,
+            **dataset_metadata,
         }
 
         result_path = Path(args.result_path)
@@ -806,7 +826,17 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     LOGGER.info("Mode: %s", args.mode)
-    LOGGER.info("Dataset URI: %s", dataset_uri)
+    dataset_source = safe_uri_metadata(
+        dataset_uri,
+        source_type=DATASET_SOURCE_TYPE,
+        identifier=CATS_DOGS_DATASET_ID,
+    )
+    LOGGER.info(
+        "Dataset source configured | type=%s | scheme=%s | id=%s",
+        dataset_source["source_type"],
+        dataset_source["scheme"],
+        dataset_source["identifier"],
+    )
     LOGGER.info("Output directory: %s", output_dir)
 
     dataset_root = prepare_dataset(
@@ -822,19 +852,29 @@ def main() -> None:
     if args.mode == "final" and not test_dir.exists():
         raise FileNotFoundError(f"Missing dataset directory: {test_dir}")
 
+    dataset_metadata = build_dataset_metadata(dataset_root)
+    LOGGER.info(
+        "Dataset content fingerprinted | id=%s | samples=%s | classes=%s | "
+        "sha256=%s",
+        dataset_metadata["dataset_id"],
+        dataset_metadata["dataset_sample_count"],
+        dataset_metadata["dataset_class_count"],
+        dataset_metadata["dataset_checksum"],
+    )
+
     if args.mode == "trial":
         run_trial(
             args=args,
-            dataset_uri=dataset_uri,
             dataset_root=dataset_root,
+            dataset_metadata=dataset_metadata,
             output_dir=output_dir,
             mlflow_config=mlflow_config,
         )
     else:
         run_final(
             args=args,
-            dataset_uri=dataset_uri,
             dataset_root=dataset_root,
+            dataset_metadata=dataset_metadata,
             output_dir=output_dir,
             mlflow_config=mlflow_config,
         )

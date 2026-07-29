@@ -6,7 +6,7 @@ from typing import Any
 
 
 SUPPORTED_ALGORITHMS = {"random"}
-TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.5"
+TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.7"
 
 
 @dataclass(frozen=True)

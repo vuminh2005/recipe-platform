@@ -55,6 +55,45 @@ class CompiledPipelineFreshnessTests(unittest.TestCase):
                         f"Stale compiled pipeline package: {tracked_path}",
                     )
 
+    def test_cats_package_uses_only_current_trainer_image(self) -> None:
+        package = (
+            ROOT
+            / "pipelines"
+            / "compiled"
+            / "cats_dogs_final_pipeline.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "docker.io/library/cats-dogs-trainer:0.7",
+            package,
+        )
+        previous_image = "docker.io/library/cats-dogs-trainer:" + "0.6"
+        self.assertNotIn(previous_image, package)
+
+    def test_active_cats_image_references_use_only_current_tag(self) -> None:
+        active_paths = (
+            ROOT / "agent" / "cats_dogs_katib.py",
+            ROOT / "pipelines" / "cats_dogs_final_pipeline.py",
+            ROOT / "pipelines" / "compiled" / "cats_dogs_final_pipeline.yaml",
+            ROOT
+            / "workloads"
+            / "cats-dogs"
+            / "manifests"
+            / "katib-experiment.yaml",
+            ROOT
+            / "workloads"
+            / "cats-dogs"
+            / "manifests"
+            / "smoke-job.yaml",
+            ROOT / "AGENTS.md",
+        )
+        previous_image = "cats-dogs-trainer:" + "0.6"
+        for path in active_paths:
+            with self.subTest(path=path):
+                source = path.read_text(encoding="utf-8")
+                self.assertNotIn(previous_image, source)
+                self.assertIn("cats-dogs-trainer:0.7", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -231,6 +231,14 @@ class CatsDogsExecutorTests(unittest.TestCase):
         self.assertFalse(
             any("objective" in patch for patch in result_patches)
         )
+        self.assertFalse(
+            any(
+                patch.get("external_ids", {}).get(
+                    "katib_experiment_id"
+                )
+                for patch in result_patches
+            )
+        )
 
     @patch("agent.cats_dogs_executor.KfpRunner")
     @patch("agent.cats_dogs_executor.KatibRunner")
