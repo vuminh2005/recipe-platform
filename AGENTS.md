@@ -6,10 +6,11 @@ This repository is a graduation-thesis prototype that connects a browser
 control plane to a local K3s execution environment through Katib, Kubeflow
 Pipelines (KFP), and MLflow.
 
-The platform currently has one working ML recipe, Cats & Dogs image
-classification, plus the internal `hello` smoke recipe. The agent selects
-these built-in recipes through an explicit registry; `hello` verifies platform
-dispatch and KFP connectivity and must not be presented as an ML workload.
+The platform currently has two working ML recipes, Cats & Dogs image
+classification and CPU-only Tabular Random Forest classification, plus the
+internal `hello` smoke recipe. The agent selects these built-in recipes through
+an explicit registry; `hello` verifies platform dispatch and KFP connectivity
+and must not be presented as an ML workload.
 Promotion, serving, and inference are out of scope until a later task
 explicitly adds them. MLflow model registration that is already part of the
 Cats & Dogs training flow is not the same as promotion and should continue to
@@ -38,9 +39,10 @@ These instructions apply to the whole repository.
   separate from recipe executors. `agent/recipe_registry.py` owns the explicit
   built-in dispatch table. `agent/cats_dogs_executor.py` owns the Cats & Dogs
   orchestration, `agent/cats_dogs_katib.py` owns its Katib manifest and result
-  interpretation, and `agent/hello_executor.py` owns the KFP-only smoke flow.
-  These handlers are not templates for putting recipe assumptions into
-  `agent/main.py`.
+  interpretation, `agent/tabular_random_forest_executor.py` and
+  `agent/tabular_random_forest_katib.py` own the Tabular flow, and
+  `agent/hello_executor.py` owns the KFP-only smoke flow. These handlers are
+  not templates for putting recipe assumptions into `agent/main.py`.
 - `pipelines/` contains KFP pipeline source code. A recipe pipeline describes
   the in-cluster steps and their inputs/outputs. The current Cats & Dogs final
   pipeline validates data, trains/evaluates the selected configuration, and
@@ -50,6 +52,9 @@ These instructions apply to the whole repository.
   definitions, and Kubernetes manifests for that recipe. The current
   `workloads/cats-dogs/` trainer also owns its data preparation, model,
   metrics, validation, and MLflow logging/registration behavior.
+  `workloads/tabular-random-forest/` owns the offline scikit-learn
+  breast-cancer dataset flow and its Random Forest model, metrics, and
+  registration behavior.
 - Katib is the hyperparameter-tuning engine. A recipe handler or recipe-owned
   manifest defines the search space, objective metrics, trial image, and trial
   arguments. Katib launches trial jobs and returns the optimal parameters; it
@@ -201,6 +206,20 @@ Relevant optional settings include `AGENT_ID`, `KFP_ENDPOINT`,
 `VITE_API_BASE_URL`; its other `VITE_*` values only configure external UI
 links and must never contain secrets.
 
+The Tabular handler accepts `TABULAR_RF_PIPELINE_PATH`,
+`TABULAR_RF_MLFLOW_EXPERIMENT_NAME`, and
+`TABULAR_RF_REGISTERED_MODEL_NAME`. Their defaults are the compiled Tabular
+package, `tabular_random_forest_recipe_demo`, and
+`tabular_random_forest_classifier`. These identities are recipe-owned and
+must not inherit Cats & Dogs MLflow names.
+
+The existing Kubernetes Secret still has the historical name
+`cats-dogs-platform-secrets`. Tabular Katib and KFP Pods select only generic
+MLflow and S3-compatible artifact keys from it. They must never use `envFrom`
+or inject Cats & Dogs dataset, experiment-name, registered-model-name, or
+image-specific keys. A neutral secret rename is deferred because it requires
+a wider deployment migration.
+
 ### Frontend validation and build
 
 The frontend is JavaScript/JSX, not TypeScript. No `tsc` or frontend test script
@@ -236,13 +255,17 @@ python -m venv /tmp/recipe-platform-validation-venv
 python -m venv /tmp/recipe-platform-mlflow-test-venv
 /tmp/recipe-platform-mlflow-test-venv/bin/pip install -r workloads/cats-dogs/requirements-test.txt
 /tmp/recipe-platform-mlflow-test-venv/bin/python -m unittest discover -s tests/workload_tests -v
+
+python3 -m venv /tmp/recipe-platform-tabular-test-venv
+/tmp/recipe-platform-tabular-test-venv/bin/pip install -r workloads/tabular-random-forest/requirements-test.txt
+/tmp/recipe-platform-tabular-test-venv/bin/python -m unittest discover -s tests/tabular_workload_tests -v
 ```
 
 No repository-wide Python formatter, linter, or type checker is configured.
 Use a cache-free syntax check for Python sources:
 
 ```bash
-python -c "import ast,pathlib; roots=('backend','agent','pipelines','workloads/cats-dogs/trainer'); files=[p for r in roots for p in pathlib.Path(r).rglob('*.py')]; [ast.parse(p.read_text(encoding='utf-8'),filename=str(p)) for p in files]"
+python3 -c "import ast,pathlib; roots=('backend','agent','pipelines','workloads/cats-dogs/trainer','workloads/tabular-random-forest/trainer'); files=[p for r in roots for p in pathlib.Path(r).rglob('*.py')]; [ast.parse(p.read_text(encoding='utf-8'),filename=str(p)) for p in files]"
 ```
 
 If a task adds tests, run the narrow relevant tests first and then the
@@ -256,6 +279,7 @@ The existing compiler entry points are:
 ```bash
 python pipelines/hello_pipeline.py
 python pipelines/cats_dogs_final_pipeline.py
+python pipelines/tabular_random_forest_pipeline.py
 ```
 
 They write generated YAML under `pipelines/compiled/`. For validation that
@@ -264,6 +288,25 @@ respects the generated-directory rule, compile to `/tmp` instead:
 ```bash
 python -c "from kfp import compiler; from pipelines.hello_pipeline import hello_pipeline; compiler.Compiler().compile(pipeline_func=hello_pipeline,package_path='/tmp/hello_pipeline.yaml')"
 python -c "from kfp import compiler; from pipelines.cats_dogs_final_pipeline import cats_dogs_final_pipeline; compiler.Compiler().compile(pipeline_func=cats_dogs_final_pipeline,package_path='/tmp/cats_dogs_final_pipeline.yaml')"
+python -c "from kfp import compiler; from pipelines.tabular_random_forest_pipeline import tabular_random_forest_pipeline; compiler.Compiler().compile(pipeline_func=tabular_random_forest_pipeline,package_path='/tmp/tabular_random_forest_pipeline.yaml')"
+```
+
+The Tabular package is intentionally versioned because the Agent submits it
+directly. Regenerate only that package after changing its Python source:
+
+```bash
+/tmp/recipe-platform-validation-venv/bin/python pipelines/tabular_random_forest_pipeline.py
+```
+
+The Tabular trainer image is
+`docker.io/library/tabular-random-forest-trainer:1.0`. Build and import it into
+local K3s without writing an archive into the repository:
+
+```bash
+docker build -t docker.io/library/tabular-random-forest-trainer:1.0 workloads/tabular-random-forest
+docker save -o /tmp/tabular-random-forest-trainer-1.0.tar docker.io/library/tabular-random-forest-trainer:1.0
+sudo k3s ctr images import /tmp/tabular-random-forest-trainer-1.0.tar
+sudo k3s ctr images list | grep -F docker.io/library/tabular-random-forest-trainer:1.0
 ```
 
 With KFP reachable at `KFP_ENDPOINT` and an existing compiled Hello package,

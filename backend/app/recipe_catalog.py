@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 CATS_DOGS_RECIPE_ID = "cats-dogs"
 HELLO_RECIPE_ID = "hello"
+TABULAR_RANDOM_FOREST_RECIPE_ID = "tabular-random-forest"
 RECIPE_VERSION = "1.0"
 
 CATS_DOGS_DEFAULT_LEARNING_RATE = 0.0003
@@ -18,6 +19,18 @@ CATS_DOGS_LEARNING_RATE_MIN = 0.00005
 CATS_DOGS_LEARNING_RATE_MAX = 0.0005
 CATS_DOGS_DROPOUT_RATE_MIN = 0.15
 CATS_DOGS_DROPOUT_RATE_MAX = 0.45
+
+TABULAR_DEFAULT_N_ESTIMATORS = 200
+TABULAR_DEFAULT_MAX_DEPTH = 8
+TABULAR_DEFAULT_MIN_SAMPLES_SPLIT = 2
+TABULAR_DEFAULT_MAX_FEATURES = "sqrt"
+TABULAR_DEFAULT_RANDOM_SEED = 42
+TABULAR_N_ESTIMATORS_MIN = 50
+TABULAR_N_ESTIMATORS_MAX = 300
+TABULAR_MAX_DEPTH_MIN = 2
+TABULAR_MAX_DEPTH_MAX = 20
+TABULAR_MIN_SAMPLES_SPLIT_MIN = 2
+TABULAR_MIN_SAMPLES_SPLIT_MAX = 10
 
 RecipeVisibility = Literal["public", "internal"]
 FieldType = Literal["integer", "number", "boolean", "string", "range"]
@@ -275,9 +288,156 @@ HELLO_DEFINITION = RecipeDefinition(
     configurable_search_space=(),
 )
 
+TABULAR_RANDOM_FOREST_DEFINITION = RecipeDefinition(
+    recipe_id=TABULAR_RANDOM_FOREST_RECIPE_ID,
+    version=RECIPE_VERSION,
+    display_name="Tabular Random Forest Classification",
+    description=(
+        "CPU-only binary tabular classification with RandomForestClassifier "
+        "and the built-in scikit-learn breast-cancer dataset."
+    ),
+    visibility="public",
+    task_type="binary_tabular_classification",
+    framework="scikit_learn",
+    model="RandomForestClassifier",
+    supports_automl=True,
+    supported_algorithms=("random",),
+    objective=ObjectiveDefinition(name="val_f1", direction="maximize"),
+    default_configuration={
+        "training": {
+            "random_seed": TABULAR_DEFAULT_RANDOM_SEED,
+        },
+        "automl": {
+            "enabled": True,
+            "max_trials": 3,
+            "parallel_trials": 1,
+            "algorithm": "random",
+            "search_space": {
+                "n_estimators": {
+                    "min": TABULAR_N_ESTIMATORS_MIN,
+                    "max": TABULAR_N_ESTIMATORS_MAX,
+                },
+                "max_depth": {
+                    "min": TABULAR_MAX_DEPTH_MIN,
+                    "max": TABULAR_MAX_DEPTH_MAX,
+                },
+                "min_samples_split": {
+                    "min": TABULAR_MIN_SAMPLES_SPLIT_MIN,
+                    "max": TABULAR_MIN_SAMPLES_SPLIT_MAX,
+                },
+            },
+        },
+        "effective_final_parameters": {
+            "n_estimators": TABULAR_DEFAULT_N_ESTIMATORS,
+            "max_depth": TABULAR_DEFAULT_MAX_DEPTH,
+            "min_samples_split": TABULAR_DEFAULT_MIN_SAMPLES_SPLIT,
+            "max_features": TABULAR_DEFAULT_MAX_FEATURES,
+            "random_seed": TABULAR_DEFAULT_RANDOM_SEED,
+        },
+    },
+    configurable_training_fields=(
+        ConfigurableFieldDefinition(
+            name="random_seed",
+            label="Random seed",
+            description=(
+                "Seed used for deterministic data splitting and model training."
+            ),
+            type="integer",
+            required=True,
+            default=TABULAR_DEFAULT_RANDOM_SEED,
+            minimum=0,
+            maximum=4_294_967_295,
+            step=1,
+        ),
+    ),
+    configurable_automl_fields=(
+        ConfigurableFieldDefinition(
+            name="enabled",
+            label="Enable AutoML",
+            description="Run Katib before final training.",
+            type="boolean",
+            required=True,
+            default=True,
+        ),
+        ConfigurableFieldDefinition(
+            name="max_trials",
+            label="Maximum trials",
+            type="integer",
+            required=True,
+            default=3,
+            minimum=1,
+            maximum=20,
+            step=1,
+        ),
+        ConfigurableFieldDefinition(
+            name="parallel_trials",
+            label="Parallel trials",
+            type="integer",
+            required=True,
+            default=1,
+            minimum=1,
+            maximum=4,
+            step=1,
+        ),
+        ConfigurableFieldDefinition(
+            name="algorithm",
+            label="Search algorithm",
+            description="Katib algorithm used for hyperparameter search.",
+            type="string",
+            required=True,
+            default="random",
+            options=(FieldOption(value="random", label="Random search"),),
+        ),
+    ),
+    configurable_search_space=(
+        ConfigurableFieldDefinition(
+            name="n_estimators",
+            label="Tree count range",
+            description="Number of trees searched by Katib.",
+            type="range",
+            required=True,
+            default={
+                "min": TABULAR_N_ESTIMATORS_MIN,
+                "max": TABULAR_N_ESTIMATORS_MAX,
+            },
+            minimum=1,
+            step=1,
+        ),
+        ConfigurableFieldDefinition(
+            name="max_depth",
+            label="Maximum tree depth range",
+            description="Maximum tree depth searched by Katib.",
+            type="range",
+            required=True,
+            default={
+                "min": TABULAR_MAX_DEPTH_MIN,
+                "max": TABULAR_MAX_DEPTH_MAX,
+            },
+            minimum=1,
+            step=1,
+        ),
+        ConfigurableFieldDefinition(
+            name="min_samples_split",
+            label="Minimum samples per split range",
+            description=(
+                "Minimum sample count required to split a node, searched by Katib."
+            ),
+            type="range",
+            required=True,
+            default={
+                "min": TABULAR_MIN_SAMPLES_SPLIT_MIN,
+                "max": TABULAR_MIN_SAMPLES_SPLIT_MAX,
+            },
+            minimum=2,
+            step=1,
+        ),
+    ),
+)
+
 CATALOG: dict[str, RecipeDefinition] = {
     CATS_DOGS_RECIPE_ID: CATS_DOGS_DEFINITION,
     HELLO_RECIPE_ID: HELLO_DEFINITION,
+    TABULAR_RANDOM_FOREST_RECIPE_ID: TABULAR_RANDOM_FOREST_DEFINITION,
 }
 CATALOG_RECIPE_IDS = frozenset(CATALOG)
 

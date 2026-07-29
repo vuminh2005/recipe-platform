@@ -6,8 +6,15 @@ from typing import Any, Protocol
 from agent.backend_client import BackendClient
 from agent.cats_dogs_executor import execute_cats_dogs_job
 from agent.hello_executor import execute_hello_job
-from agent.recipe_ids import CATS_DOGS_RECIPE_ID, HELLO_RECIPE_ID
+from agent.recipe_ids import (
+    CATS_DOGS_RECIPE_ID,
+    HELLO_RECIPE_ID,
+    TABULAR_RANDOM_FOREST_RECIPE_ID,
+)
 from agent.settings import Settings
+from agent.tabular_random_forest_executor import (
+    execute_tabular_random_forest_job,
+)
 
 
 LOGGER = logging.getLogger("recipe_registry")
@@ -26,6 +33,7 @@ class RecipeHandler(Protocol):
 HANDLERS: dict[str, RecipeHandler] = {
     CATS_DOGS_RECIPE_ID: execute_cats_dogs_job,
     HELLO_RECIPE_ID: execute_hello_job,
+    TABULAR_RANDOM_FOREST_RECIPE_ID: execute_tabular_random_forest_job,
 }
 
 

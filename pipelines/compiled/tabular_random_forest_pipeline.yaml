@@ -1,0 +1,340 @@
+# PIPELINE DEFINITION
+# Name: tabular-random-forest-pipeline
+# Description: Validate the built-in dataset, train and evaluate a CPU-only Random Forest, then register the logged model in MLflow.
+# Inputs:
+#    katib_experiment_id: str [Default: '']
+#    max_depth: int [Default: 8.0]
+#    max_features: str [Default: 'sqrt']
+#    min_samples_split: int [Default: 2.0]
+#    mlflow_experiment_name: str [Default: 'tabular_random_forest_recipe_demo']
+#    mlflow_parent_run_id: str [Default: '']
+#    n_estimators: int [Default: 200.0]
+#    platform_job_id: str [Default: 'manual-tabular-rf-001']
+#    random_seed: int [Default: 42.0]
+#    recipe_id: str [Default: 'tabular-random-forest']
+#    recipe_version: str [Default: '1.0']
+#    registered_model_name: str [Default: 'tabular_random_forest_classifier']
+components:
+  comp-final-train-and-evaluate:
+    executorLabel: exec-final-train-and-evaluate
+    inputDefinitions:
+      parameters:
+        katib_experiment_id:
+          parameterType: STRING
+        max_depth:
+          parameterType: NUMBER_INTEGER
+        max_features:
+          parameterType: STRING
+        min_samples_split:
+          parameterType: NUMBER_INTEGER
+        mlflow_experiment_name:
+          parameterType: STRING
+        mlflow_parent_run_id:
+          parameterType: STRING
+        n_estimators:
+          parameterType: NUMBER_INTEGER
+        platform_job_id:
+          parameterType: STRING
+        random_seed:
+          parameterType: NUMBER_INTEGER
+        recipe_id:
+          parameterType: STRING
+        recipe_version:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        result_json:
+          parameterType: STRING
+  comp-register-model:
+    executorLabel: exec-register-model
+    inputDefinitions:
+      parameters:
+        mlflow_parent_run_id:
+          parameterType: STRING
+        platform_job_id:
+          parameterType: STRING
+        registered_model_name:
+          parameterType: STRING
+        result_json:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        registered_result_json:
+          parameterType: STRING
+  comp-validate-dataset:
+    executorLabel: exec-validate-dataset
+    inputDefinitions:
+      parameters:
+        random_seed:
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      parameters:
+        validation_json:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-final-train-and-evaluate:
+      container:
+        args:
+        - "\nexport PLATFORM_JOB_ID=\"$1\"\nexport MLFLOW_PARENT_RUN_ID=\"$2\"\nif\
+          \ [ -n \"$3\" ]; then\n  export KATIB_EXPERIMENT_NAME=\"$3\"\nfi\nshift\
+          \ 3\nexec python -m trainer.train \"$@\"\n"
+        - runner
+        - '{{$.inputs.parameters[''platform_job_id'']}}'
+        - '{{$.inputs.parameters[''mlflow_parent_run_id'']}}'
+        - '{{$.inputs.parameters[''katib_experiment_id'']}}'
+        - --mode=final
+        - --recipe-id
+        - '{{$.inputs.parameters[''recipe_id'']}}'
+        - --recipe-version
+        - '{{$.inputs.parameters[''recipe_version'']}}'
+        - --random-seed
+        - '{{$.inputs.parameters[''random_seed'']}}'
+        - --n-estimators
+        - '{{$.inputs.parameters[''n_estimators'']}}'
+        - --max-depth
+        - '{{$.inputs.parameters[''max_depth'']}}'
+        - --min-samples-split
+        - '{{$.inputs.parameters[''min_samples_split'']}}'
+        - --max-features
+        - '{{$.inputs.parameters[''max_features'']}}'
+        - --mlflow-experiment-name
+        - '{{$.inputs.parameters[''mlflow_experiment_name'']}}'
+        - --result-path
+        - '{{$.outputs.parameters[''result_json''].output_file}}'
+        command:
+        - sh
+        - -c
+        image: docker.io/library/tabular-random-forest-trainer:1.0
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 0.25
+          memoryLimit: 2.147483648
+          memoryRequest: 0.536870912
+          resourceCpuLimit: '2'
+          resourceCpuRequest: 250m
+          resourceMemoryLimit: 2Gi
+          resourceMemoryRequest: 512Mi
+    exec-register-model:
+      container:
+        args:
+        - '
+
+          export PLATFORM_JOB_ID="$1"
+
+          export MLFLOW_PARENT_RUN_ID="$2"
+
+          INPUT_FILE="/tmp/training-result.json"
+
+          printf ''%s'' "$3" > "$INPUT_FILE"
+
+          exec python -m trainer.register_model   --input-json "$INPUT_FILE"   --registered-model-name
+          "$4"   --output-path "$5"
+
+          '
+        - runner
+        - '{{$.inputs.parameters[''platform_job_id'']}}'
+        - '{{$.inputs.parameters[''mlflow_parent_run_id'']}}'
+        - '{{$.inputs.parameters[''result_json'']}}'
+        - '{{$.inputs.parameters[''registered_model_name'']}}'
+        - '{{$.outputs.parameters[''registered_result_json''].output_file}}'
+        command:
+        - sh
+        - -c
+        image: docker.io/library/tabular-random-forest-trainer:1.0
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.1
+          memoryLimit: 1.073741824
+          memoryRequest: 0.268435456
+          resourceCpuLimit: '1'
+          resourceCpuRequest: 100m
+          resourceMemoryLimit: 1Gi
+          resourceMemoryRequest: 256Mi
+    exec-validate-dataset:
+      container:
+        args:
+        - --random-seed
+        - '{{$.inputs.parameters[''random_seed'']}}'
+        - --output-path
+        - '{{$.outputs.parameters[''validation_json''].output_file}}'
+        command:
+        - python
+        - -m
+        - trainer.validate
+        image: docker.io/library/tabular-random-forest-trainer:1.0
+        resources:
+          cpuLimit: 1.0
+          cpuRequest: 0.1
+          memoryLimit: 1.073741824
+          memoryRequest: 0.268435456
+          resourceCpuLimit: '1'
+          resourceCpuRequest: 100m
+          resourceMemoryLimit: 1Gi
+          resourceMemoryRequest: 256Mi
+pipelineInfo:
+  description: Validate the built-in dataset, train and evaluate a CPU-only Random
+    Forest, then register the logged model in MLflow.
+  name: tabular-random-forest-pipeline
+root:
+  dag:
+    tasks:
+      final-train-and-evaluate:
+        cachingOptions: {}
+        componentRef:
+          name: comp-final-train-and-evaluate
+        dependentTasks:
+        - validate-dataset
+        inputs:
+          parameters:
+            katib_experiment_id:
+              componentInputParameter: katib_experiment_id
+            max_depth:
+              componentInputParameter: max_depth
+            max_features:
+              componentInputParameter: max_features
+            min_samples_split:
+              componentInputParameter: min_samples_split
+            mlflow_experiment_name:
+              componentInputParameter: mlflow_experiment_name
+            mlflow_parent_run_id:
+              componentInputParameter: mlflow_parent_run_id
+            n_estimators:
+              componentInputParameter: n_estimators
+            platform_job_id:
+              componentInputParameter: platform_job_id
+            random_seed:
+              componentInputParameter: random_seed
+            recipe_id:
+              componentInputParameter: recipe_id
+            recipe_version:
+              componentInputParameter: recipe_version
+        taskInfo:
+          name: final-train-and-evaluate
+      register-model:
+        cachingOptions: {}
+        componentRef:
+          name: comp-register-model
+        dependentTasks:
+        - final-train-and-evaluate
+        inputs:
+          parameters:
+            mlflow_parent_run_id:
+              componentInputParameter: mlflow_parent_run_id
+            platform_job_id:
+              componentInputParameter: platform_job_id
+            registered_model_name:
+              componentInputParameter: registered_model_name
+            result_json:
+              taskOutputParameter:
+                outputParameterKey: result_json
+                producerTask: final-train-and-evaluate
+        taskInfo:
+          name: register-model
+      validate-dataset:
+        cachingOptions: {}
+        componentRef:
+          name: comp-validate-dataset
+        inputs:
+          parameters:
+            random_seed:
+              componentInputParameter: random_seed
+        taskInfo:
+          name: validate-dataset
+  inputDefinitions:
+    parameters:
+      katib_experiment_id:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      max_depth:
+        defaultValue: 8.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      max_features:
+        defaultValue: sqrt
+        isOptional: true
+        parameterType: STRING
+      min_samples_split:
+        defaultValue: 2.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      mlflow_experiment_name:
+        defaultValue: tabular_random_forest_recipe_demo
+        isOptional: true
+        parameterType: STRING
+      mlflow_parent_run_id:
+        defaultValue: ''
+        isOptional: true
+        parameterType: STRING
+      n_estimators:
+        defaultValue: 200.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      platform_job_id:
+        defaultValue: manual-tabular-rf-001
+        isOptional: true
+        parameterType: STRING
+      random_seed:
+        defaultValue: 42.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      recipe_id:
+        defaultValue: tabular-random-forest
+        isOptional: true
+        parameterType: STRING
+      recipe_version:
+        defaultValue: '1.0'
+        isOptional: true
+        parameterType: STRING
+      registered_model_name:
+        defaultValue: tabular_random_forest_classifier
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.0
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-final-train-and-evaluate:
+          imagePullPolicy: Never
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            optional: false
+            secretName: cats-dogs-platform-secrets
+            secretNameParameter:
+              runtimeValue:
+                constant: cats-dogs-platform-secrets
+        exec-register-model:
+          imagePullPolicy: Never
+          secretAsEnv:
+          - keyToEnv:
+            - envVar: MLFLOW_TRACKING_URI
+              secretKey: MLFLOW_TRACKING_URI
+            - envVar: MLFLOW_S3_ENDPOINT_URL
+              secretKey: MLFLOW_S3_ENDPOINT_URL
+            - envVar: AWS_ACCESS_KEY_ID
+              secretKey: AWS_ACCESS_KEY_ID
+            - envVar: AWS_SECRET_ACCESS_KEY
+              secretKey: AWS_SECRET_ACCESS_KEY
+            - envVar: AWS_DEFAULT_REGION
+              secretKey: AWS_DEFAULT_REGION
+            optional: false
+            secretName: cats-dogs-platform-secrets
+            secretNameParameter:
+              runtimeValue:
+                constant: cats-dogs-platform-secrets
+        exec-validate-dataset:
+          imagePullPolicy: Never

@@ -6,6 +6,20 @@ import unittest
 
 from agent.recipe_ids import BUILTIN_RECIPE_IDS
 from backend.app.recipe_catalog import CATALOG_RECIPE_IDS
+from backend.app.recipe_catalog import (
+    TABULAR_DEFAULT_MAX_DEPTH,
+    TABULAR_DEFAULT_MAX_FEATURES,
+    TABULAR_DEFAULT_MIN_SAMPLES_SPLIT,
+    TABULAR_DEFAULT_N_ESTIMATORS,
+    TABULAR_DEFAULT_RANDOM_SEED,
+)
+from agent.tabular_random_forest_config import (
+    DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_FEATURES,
+    DEFAULT_MIN_SAMPLES_SPLIT,
+    DEFAULT_N_ESTIMATORS,
+    DEFAULT_RANDOM_SEED,
+)
 
 
 class RecipeIdentifierAlignmentTests(unittest.TestCase):
@@ -39,6 +53,16 @@ if loaded:
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_tabular_defaults_align_without_runtime_coupling(self) -> None:
+        self.assertEqual(TABULAR_DEFAULT_N_ESTIMATORS, DEFAULT_N_ESTIMATORS)
+        self.assertEqual(TABULAR_DEFAULT_MAX_DEPTH, DEFAULT_MAX_DEPTH)
+        self.assertEqual(
+            TABULAR_DEFAULT_MIN_SAMPLES_SPLIT,
+            DEFAULT_MIN_SAMPLES_SPLIT,
+        )
+        self.assertEqual(TABULAR_DEFAULT_MAX_FEATURES, DEFAULT_MAX_FEATURES)
+        self.assertEqual(TABULAR_DEFAULT_RANDOM_SEED, DEFAULT_RANDOM_SEED)
 
 
 if __name__ == "__main__":

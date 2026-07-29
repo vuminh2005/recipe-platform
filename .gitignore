@@ -26,6 +26,7 @@ logs/*
 # Generated pipeline packages
 pipelines/compiled/*.yaml
 pipelines/compiled/*.json
+!pipelines/compiled/tabular_random_forest_pipeline.yaml
 
 # Docker
 *.tar

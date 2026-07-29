@@ -16,10 +16,22 @@ class RecipeRegistryTests(unittest.TestCase):
     def test_handlers_cover_declared_builtin_recipe_ids(self) -> None:
         self.assertEqual(frozenset(HANDLERS), BUILTIN_RECIPE_IDS)
 
-    def execute_with_handlers(self, job, *, cats_dogs, hello) -> None:
+    def execute_with_handlers(
+        self,
+        job,
+        *,
+        cats_dogs,
+        hello,
+        tabular=None,
+    ) -> None:
+        tabular = tabular or Mock()
         with patch.dict(
             HANDLERS,
-            {"cats-dogs": cats_dogs, "hello": hello},
+            {
+                "cats-dogs": cats_dogs,
+                "hello": hello,
+                "tabular-random-forest": tabular,
+            },
             clear=True,
         ):
             execute_job(
@@ -55,6 +67,47 @@ class RecipeRegistryTests(unittest.TestCase):
             backend=self.backend,
         )
         cats_dogs.assert_not_called()
+
+    def test_recipe_id_dispatches_to_tabular_random_forest(self) -> None:
+        cats_dogs = Mock()
+        hello = Mock()
+        tabular = Mock()
+        job = {
+            "id": "job-1",
+            "recipe": {"recipe_id": "tabular-random-forest"},
+        }
+
+        self.execute_with_handlers(
+            job,
+            cats_dogs=cats_dogs,
+            hello=hello,
+            tabular=tabular,
+        )
+
+        tabular.assert_called_once_with(
+            job,
+            settings=self.settings,
+            backend=self.backend,
+        )
+        cats_dogs.assert_not_called()
+        hello.assert_not_called()
+
+    def test_legacy_tabular_workload_is_supported(self) -> None:
+        cats_dogs = Mock()
+        hello = Mock()
+        tabular = Mock()
+        job = {
+            "id": "job-1",
+            "recipe": {"workload": "tabular-random-forest"},
+        }
+
+        self.execute_with_handlers(
+            job,
+            cats_dogs=cats_dogs,
+            hello=hello,
+            tabular=tabular,
+        )
+        tabular.assert_called_once()
 
     def test_legacy_cats_dogs_workload_remains_supported(self) -> None:
         cats_dogs = Mock()
@@ -99,7 +152,11 @@ class RecipeRegistryTests(unittest.TestCase):
 
         with patch.dict(
             HANDLERS,
-            {"cats-dogs": cats_dogs, "hello": hello},
+            {
+                "cats-dogs": cats_dogs,
+                "hello": hello,
+                "tabular-random-forest": Mock(),
+            },
             clear=True,
         ):
             with self.assertRaisesRegex(
@@ -119,7 +176,8 @@ class RecipeRegistryTests(unittest.TestCase):
             status="FAILED",
             error_message=(
                 "Unsupported recipe identifier 'unknown'; "
-                "supported built-ins: cats-dogs, hello"
+                "supported built-ins: cats-dogs, hello, "
+                "tabular-random-forest"
             ),
         )
 

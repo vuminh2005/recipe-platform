@@ -290,6 +290,81 @@ class JobResultTests(unittest.TestCase):
             "legacy-katib",
         )
 
+    def test_tabular_disabled_result_keeps_objective_definition_only(
+        self,
+    ) -> None:
+        configuration = {
+            "training": {"random_seed": 42},
+            "automl": {"enabled": False},
+            "effective_final_parameters": {
+                "n_estimators": 200,
+                "max_depth": 8,
+                "min_samples_split": 2,
+                "max_features": "sqrt",
+                "random_seed": 42,
+            },
+        }
+        job = stored_job(
+            recipe={
+                "recipe_id": "tabular-random-forest",
+                "configuration": configuration,
+                "recipe_snapshot": {
+                    "objective": {
+                        "name": "val_f1",
+                        "direction": "maximize",
+                    },
+                    "configuration": configuration,
+                },
+            },
+            kfp_run_id="tabular-kfp",
+            final_metrics={"test_f1": 0.94},
+        )
+
+        result = build_job_result(job)
+
+        self.assertEqual(result.objective.name, "val_f1")
+        self.assertEqual(result.objective.direction, "maximize")
+        self.assertIsNone(result.objective.value)
+        self.assertIsNone(result.best_params)
+        self.assertIsNone(result.external_ids.katib_experiment_id)
+        self.assertEqual(result.external_ids.kfp_run_id, "tabular-kfp")
+
+    def test_tabular_enabled_result_preserves_typed_best_parameters(
+        self,
+    ) -> None:
+        job = stored_job(
+            recipe={
+                "recipe_id": "tabular-random-forest",
+                "configuration": {"automl": {"enabled": True}},
+                "recipe_snapshot": {
+                    "objective": {
+                        "name": "val_f1",
+                        "direction": "maximize",
+                    }
+                },
+            },
+            katib_experiment_name="tabular-hpo",
+            kfp_run_id="tabular-kfp",
+            best_metric=0.9521,
+            best_params={
+                "n_estimators": 187,
+                "max_depth": 9,
+                "min_samples_split": 4,
+            },
+        )
+
+        result = build_job_result(job)
+
+        self.assertEqual(result.objective.value, 0.9521)
+        self.assertEqual(
+            result.best_params,
+            {
+                "n_estimators": 187,
+                "max_depth": 9,
+                "min_samples_split": 4,
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

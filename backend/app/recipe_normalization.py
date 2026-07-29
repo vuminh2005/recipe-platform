@@ -12,6 +12,7 @@ from .job_contracts import (
     CatsDogsConfiguration,
     HelloConfiguration,
     RecipeCreate,
+    TabularRandomForestConfiguration,
     TrainingConfig,
 )
 from .recipe_catalog import (
@@ -19,6 +20,11 @@ from .recipe_catalog import (
     CATS_DOGS_DEFAULT_LEARNING_RATE,
     CATS_DOGS_RECIPE_ID,
     HELLO_RECIPE_ID,
+    TABULAR_DEFAULT_MAX_DEPTH,
+    TABULAR_DEFAULT_MAX_FEATURES,
+    TABULAR_DEFAULT_MIN_SAMPLES_SPLIT,
+    TABULAR_DEFAULT_N_ESTIMATORS,
+    TABULAR_RANDOM_FOREST_RECIPE_ID,
     RecipeDefinition,
     get_recipe_definition,
 )
@@ -85,15 +91,17 @@ def _snapshot(
             else None
         ),
         "configuration": deepcopy(configuration),
-        "recipe_defaults": {
-            "automl_disabled_parameters": deepcopy(
-                definition.default_configuration.get(
-                    "effective_final_parameters"
+        "recipe_defaults": (
+            {
+                "automl_disabled_parameters": deepcopy(
+                    definition.default_configuration.get(
+                        "effective_final_parameters"
+                    )
                 )
-            )
-        }
-        if definition.recipe_id == CATS_DOGS_RECIPE_ID
-        else {},
+            }
+            if "effective_final_parameters" in definition.default_configuration
+            else {}
+        ),
     }
 
 
@@ -180,12 +188,58 @@ def _hello_configuration(request: RecipeCreate) -> dict[str, Any]:
     return {}
 
 
+def _tabular_random_forest_configuration(
+    request: RecipeCreate,
+) -> dict[str, Any]:
+    legacy_fields = {
+        "training",
+        "automl",
+        "training_config",
+        "automl_config",
+    }
+    supplied_legacy_fields = legacy_fields & request.model_fields_set
+    if supplied_legacy_fields:
+        raise RecipeNormalizationError(
+            "The Tabular Random Forest recipe accepts configuration only "
+            "through the recipe-scoped configuration field; unsupported "
+            f"legacy fields: {sorted(supplied_legacy_fields)}"
+        )
+
+    try:
+        parsed = TabularRandomForestConfiguration.model_validate(
+            request.configuration or {}
+        )
+    except ValidationError as exc:
+        raise RecipeNormalizationError(str(exc)) from exc
+
+    training_values = parsed.training.model_dump(mode="json")
+    automl_values = parsed.automl.model_dump(mode="json")
+    effective_final_parameters = (
+        {
+            "n_estimators": TABULAR_DEFAULT_N_ESTIMATORS,
+            "max_depth": TABULAR_DEFAULT_MAX_DEPTH,
+            "min_samples_split": TABULAR_DEFAULT_MIN_SAMPLES_SPLIT,
+            "max_features": TABULAR_DEFAULT_MAX_FEATURES,
+            "random_seed": parsed.training.random_seed,
+        }
+        if not parsed.automl.enabled
+        else None
+    )
+    return {
+        "training": training_values,
+        "automl": automl_values,
+        "effective_final_parameters": effective_final_parameters,
+    }
+
+
 def normalize_recipe_request(request: RecipeCreate) -> dict[str, Any]:
     definition = _definition_for_request(request)
     if definition.recipe_id == CATS_DOGS_RECIPE_ID:
         configuration = _cats_dogs_configuration(request)
     elif definition.recipe_id == HELLO_RECIPE_ID:
         configuration = _hello_configuration(request)
+    elif definition.recipe_id == TABULAR_RANDOM_FOREST_RECIPE_ID:
+        configuration = _tabular_random_forest_configuration(request)
     else:  # pragma: no cover - guarded by the explicit catalog
         raise RecipeNormalizationError(
             f"No normalizer for recipe {definition.recipe_id!r}"

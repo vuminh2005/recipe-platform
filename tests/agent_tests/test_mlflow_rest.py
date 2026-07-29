@@ -44,6 +44,32 @@ class GenericMlflowRestTests(unittest.TestCase):
             max_results=3,
         )
 
+    def test_generic_lineage_tag_operations_use_mlflow_rest(self) -> None:
+        client = MlflowRestClient.__new__(MlflowRestClient)
+        client._post = Mock(return_value={})
+
+        client.set_run_tag(
+            run_id="run-1",
+            key="platform.kfp_run_id",
+            value="kfp-1",
+        )
+        client.set_model_version_tag(
+            name="actual-model",
+            version="7",
+            key="platform.kfp_run_id",
+            value="kfp-1",
+        )
+
+        self.assertEqual(client._post.call_count, 2)
+        self.assertEqual(
+            client._post.call_args_list[0].args[0],
+            "/api/2.0/mlflow/runs/set-tag",
+        )
+        self.assertEqual(
+            client._post.call_args_list[1].args[0],
+            "/api/2.0/mlflow/model-versions/set-tag",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

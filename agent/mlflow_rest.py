@@ -137,6 +137,34 @@ class MlflowRestClient:
             },
         )
 
+    def set_run_tag(self, *, run_id: str, key: str, value: str) -> None:
+        self._post(
+            "/api/2.0/mlflow/runs/set-tag",
+            {
+                "run_id": run_id,
+                "key": key,
+                "value": value,
+            },
+        )
+
+    def set_model_version_tag(
+        self,
+        *,
+        name: str,
+        version: str,
+        key: str,
+        value: str,
+    ) -> None:
+        self._post(
+            "/api/2.0/mlflow/model-versions/set-tag",
+            {
+                "name": name,
+                "version": version,
+                "key": key,
+                "value": value,
+            },
+        )
+
     @staticmethod
     def normalize_run(run: dict[str, Any]) -> dict[str, Any]:
         info = run.get("info", {})

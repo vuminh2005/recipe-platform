@@ -24,7 +24,11 @@ from .job_results import (
 
 
 LOGGER = logging.getLogger("recipe_platform.contracts")
-BuiltinRecipeId = Literal["hello", "cats-dogs"]
+BuiltinRecipeId = Literal[
+    "hello",
+    "cats-dogs",
+    "tabular-random-forest",
+]
 
 
 class JobStatus(str, Enum):
@@ -177,6 +181,95 @@ class CatsDogsConfiguration(BaseModel):
 
 class HelloConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class TabularRandomForestTrainingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    random_seed: int = Field(default=42, ge=0, le=4_294_967_295)
+
+
+class NEstimatorsRange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: int = Field(default=50, ge=1)
+    max: int = Field(default=300, ge=1)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> "NEstimatorsRange":
+        if self.min >= self.max:
+            raise ValueError("n_estimators.min must be less than n_estimators.max")
+        return self
+
+
+class MaxDepthRange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: int = Field(default=2, ge=1)
+    max: int = Field(default=20, ge=1)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> "MaxDepthRange":
+        if self.min >= self.max:
+            raise ValueError("max_depth.min must be less than max_depth.max")
+        return self
+
+
+class MinSamplesSplitRange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: int = Field(default=2, ge=2)
+    max: int = Field(default=10, ge=2)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> "MinSamplesSplitRange":
+        if self.min >= self.max:
+            raise ValueError(
+                "min_samples_split.min must be less than "
+                "min_samples_split.max"
+            )
+        return self
+
+
+class TabularRandomForestSearchSpace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_estimators: NEstimatorsRange = Field(default_factory=NEstimatorsRange)
+    max_depth: MaxDepthRange = Field(default_factory=MaxDepthRange)
+    min_samples_split: MinSamplesSplitRange = Field(
+        default_factory=MinSamplesSplitRange
+    )
+
+
+class TabularRandomForestAutoMLConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    max_trials: int = Field(default=3, ge=1, le=20)
+    parallel_trials: int = Field(default=1, ge=1, le=4)
+    algorithm: Literal["random"] = "random"
+    search_space: TabularRandomForestSearchSpace = Field(
+        default_factory=TabularRandomForestSearchSpace
+    )
+
+    @model_validator(mode="after")
+    def validate_parallel_trials(self) -> "TabularRandomForestAutoMLConfig":
+        if self.parallel_trials > self.max_trials:
+            raise ValueError(
+                "parallel_trials must be less than or equal to max_trials"
+            )
+        return self
+
+
+class TabularRandomForestConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    training: TabularRandomForestTrainingConfig = Field(
+        default_factory=TabularRandomForestTrainingConfig
+    )
+    automl: TabularRandomForestAutoMLConfig = Field(
+        default_factory=TabularRandomForestAutoMLConfig
+    )
 
 
 class RecipeCreate(BaseModel):

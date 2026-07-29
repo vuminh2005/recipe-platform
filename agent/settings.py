@@ -25,6 +25,13 @@ class HelloSettings:
 
 
 @dataclass(frozen=True)
+class TabularRandomForestSettings:
+    pipeline_path: Path
+    mlflow_experiment_name: str
+    registered_model_name: str
+
+
+@dataclass(frozen=True)
 class Settings:
     backend_url: str
     agent_id: str
@@ -35,6 +42,7 @@ class Settings:
     katib_namespace: str
     cats_dogs: CatsDogsSettings
     hello: HelloSettings
+    tabular_random_forest: TabularRandomForestSettings
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -68,6 +76,25 @@ class Settings:
                 kfp_experiment_name=os.getenv(
                     "HELLO_KFP_EXPERIMENT_NAME",
                     "recipe-platform-jobs",
+                ),
+            ),
+            tabular_random_forest=TabularRandomForestSettings(
+                pipeline_path=Path(
+                    os.getenv(
+                        "TABULAR_RF_PIPELINE_PATH",
+                        (
+                            "pipelines/compiled/"
+                            "tabular_random_forest_pipeline.yaml"
+                        ),
+                    )
+                ).resolve(),
+                mlflow_experiment_name=os.getenv(
+                    "TABULAR_RF_MLFLOW_EXPERIMENT_NAME",
+                    "tabular_random_forest_recipe_demo",
+                ),
+                registered_model_name=os.getenv(
+                    "TABULAR_RF_REGISTERED_MODEL_NAME",
+                    "tabular_random_forest_classifier",
                 ),
             ),
         )
