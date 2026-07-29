@@ -81,3 +81,52 @@ test("effective Tabular display defaults use the selected random seed", () => {
     },
   );
 });
+
+test("rejects Cats definitions missing required renderer metadata", () => {
+  const cases = [
+    ["image_size", "configurable_training_fields"],
+    ["algorithm", "configurable_automl_fields"],
+    ["learning_rate", "configurable_search_space"],
+  ];
+
+  for (const [fieldName, section] of cases) {
+    const recipe = structuredClone(catsDogsRecipe);
+    recipe[section] = recipe[section].filter(
+      (field) => field.name !== fieldName,
+    );
+    const prepared = prepareRecipeCatalog([recipe]);
+    assert.deepEqual(prepared.recipes, [], fieldName);
+    assert.equal(prepared.issues.length, 1, fieldName);
+  }
+
+  const missingObjective = structuredClone(catsDogsRecipe);
+  missingObjective.objective = null;
+  assert.deepEqual(prepareRecipeCatalog([missingObjective]).recipes, []);
+});
+
+test("rejects every entry for duplicate supported recipe identities", () => {
+  for (const recipe of [catsDogsRecipe, tabularRecipe]) {
+    const prepared = prepareRecipeCatalog([
+      structuredClone(recipe),
+      structuredClone(recipe),
+    ]);
+    assert.deepEqual(prepared.recipes, []);
+    assert.equal(prepared.issues.length, 1);
+    assert.match(prepared.issues[0], /Duplicate recipe definition/);
+  }
+});
+
+test("keeps a valid recipe usable alongside an invalid recipe", () => {
+  const invalidTabular = structuredClone(tabularRecipe);
+  invalidTabular.configurable_search_space =
+    invalidTabular.configurable_search_space.filter(
+      (field) => field.name !== "max_depth",
+    );
+
+  const prepared = prepareRecipeCatalog([catsDogsRecipe, invalidTabular]);
+  assert.deepEqual(
+    prepared.recipes.map((recipe) => recipe.recipe_id),
+    ["cats-dogs"],
+  );
+  assert.equal(prepared.issues.length, 1);
+});

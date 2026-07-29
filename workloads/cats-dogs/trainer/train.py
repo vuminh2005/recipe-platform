@@ -96,6 +96,8 @@ def parse_args() -> argparse.Namespace:
         description="Train Cats & Dogs MobileNetV2 for Katib trials or final training."
     )
     parser.add_argument("--mode", choices=("trial", "final"), required=True)
+    parser.add_argument("--recipe-id", default="cats-dogs")
+    parser.add_argument("--recipe-version", default="1.0")
     parser.add_argument("--learning-rate", type=float, required=True)
     parser.add_argument("--dropout-rate", type=float, required=True)
     parser.add_argument("--dense-units", type=int, default=128)
@@ -131,6 +133,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_args(args: argparse.Namespace) -> None:
+    if args.recipe_id != "cats-dogs":
+        raise ValueError(
+            f"Unsupported recipe ID {args.recipe_id!r}; expected 'cats-dogs'"
+        )
+    if args.recipe_version != "1.0":
+        raise ValueError(
+            f"Unsupported Cats & Dogs recipe version {args.recipe_version!r}; "
+            "expected '1.0'"
+        )
     if args.learning_rate <= 0:
         raise ValueError("--learning-rate must be greater than 0")
     if not 0 <= args.dropout_rate < 1:
@@ -241,10 +252,16 @@ def build_run_tags(
     *,
     mode: str,
     mlflow_config: dict[str, str | None],
+    recipe_id: str,
+    recipe_version: str,
 ) -> dict[str, str]:
     tags = {
         "platform.job_id": str(mlflow_config["platform_job_id"]),
+        "platform.recipe_id": recipe_id,
+        "platform.recipe_version": recipe_version,
         "platform.run_role": "katib_trial" if mode == "trial" else "final_training",
+        "model.framework": "tensorflow_keras",
+        "model.task_type": "binary_image_classification",
         "model.architecture": "MobileNetV2",
     }
 
@@ -257,6 +274,10 @@ def build_run_tags(
             mlflow_config["katib_experiment_name"]
         )
         tags["katib.trial"] = str(mlflow_config["katib_trial_name"])
+
+    katib_experiment_name = mlflow_config.get("katib_experiment_name")
+    if katib_experiment_name and katib_experiment_name != "standalone":
+        tags["platform.katib_experiment_id"] = str(katib_experiment_name)
 
     return tags
 
@@ -403,7 +424,12 @@ def run_trial(
         seed=SEED,
     )
 
-    tags = build_run_tags(mode="trial", mlflow_config=mlflow_config)
+    tags = build_run_tags(
+        mode="trial",
+        mlflow_config=mlflow_config,
+        recipe_id=args.recipe_id,
+        recipe_version=args.recipe_version,
+    )
     trial_name = str(mlflow_config["katib_trial_name"])
 
     with mlflow.start_run(
@@ -545,7 +571,12 @@ def run_final(
         seed=SEED,
     )
 
-    tags = build_run_tags(mode="final", mlflow_config=mlflow_config)
+    tags = build_run_tags(
+        mode="final",
+        mlflow_config=mlflow_config,
+        recipe_id=args.recipe_id,
+        recipe_version=args.recipe_version,
+    )
     platform_job_id = str(mlflow_config["platform_job_id"])
 
     with mlflow.start_run(
@@ -699,6 +730,11 @@ def run_final(
 
         result = {
             "platform_job_id": platform_job_id,
+            "recipe_id": args.recipe_id,
+            "recipe_version": args.recipe_version,
+            "katib_experiment_id": (
+                mlflow_config.get("katib_experiment_name") or None
+            ),
             "mlflow_run_id": run.info.run_id,
             "model_uri": model_uri,
             "registered_model_name": (

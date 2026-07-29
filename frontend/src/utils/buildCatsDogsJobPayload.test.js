@@ -79,3 +79,23 @@ test("disabled Cats & Dogs payload contains no result or effective fields", () =
   assert.equal("best_params" in payload, false);
   assert.equal("objective" in payload, false);
 });
+
+test("rejects an incomplete Cats catalog definition", () => {
+  const incomplete = structuredClone(catsDogsRecipe);
+  incomplete.configurable_training_fields =
+    incomplete.configurable_training_fields.filter(
+      (field) => field.name !== "image_size",
+    );
+
+  assert.throws(
+    () =>
+      buildCatsDogsJobPayload(
+        {
+          name: "invalid-catalog",
+          configuration: structuredClone(incomplete.default_configuration),
+        },
+        incomplete,
+      ),
+    /valid Cats & Dogs catalog definition/,
+  );
+});

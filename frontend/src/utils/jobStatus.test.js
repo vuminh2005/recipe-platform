@@ -52,6 +52,41 @@ test("Hello uses only its KFP smoke lifecycle", () => {
   );
 });
 
+test("Hello failure before KFP submission remains pre-running", () => {
+  const failed = job({ recipeId: "hello" });
+  const steps = getTimelineSteps(failed);
+
+  assert.equal(inferFailureStage(failed, steps), "CLAIMED");
+  assert.equal(getTimelineState("CLAIMED", failed, steps), "failed");
+  assert.equal(getTimelineState("RUNNING", failed, steps), "upcoming");
+});
+
+test("Hello failure after KFP submission reaches running", () => {
+  const failed = job({
+    recipeId: "hello",
+    result: result({ kfp_run_id: "hello-kfp-run" }),
+  });
+  const steps = getTimelineSteps(failed);
+
+  assert.equal(inferFailureStage(failed, steps), "RUNNING");
+  assert.equal(getTimelineState("CLAIMED", failed, steps), "complete");
+  assert.equal(getTimelineState("RUNNING", failed, steps), "failed");
+  assert.equal(getTimelineState("SUCCEEDED", failed, steps), "upcoming");
+});
+
+test("successful Hello completes its smoke lifecycle", () => {
+  const succeeded = job({
+    recipeId: "hello",
+    status: "SUCCEEDED",
+    result: result({ kfp_run_id: "hello-kfp-run" }),
+  });
+  const steps = getTimelineSteps(succeeded);
+
+  for (const step of steps) {
+    assert.equal(getTimelineState(step, succeeded, steps), "complete");
+  }
+});
+
 test("failure before Katib is conservatively assigned to claimed", () => {
   const failed = job();
   const steps = getTimelineSteps(failed);

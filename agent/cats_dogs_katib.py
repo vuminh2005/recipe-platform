@@ -6,7 +6,7 @@ from typing import Any
 
 
 SUPPORTED_ALGORITHMS = {"random"}
-TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.4"
+TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.5"
 
 
 @dataclass(frozen=True)
@@ -219,21 +219,46 @@ def parse_experiment_result(
     name = str(experiment["metadata"]["name"])
     optimal = experiment.get("status", {}).get("currentOptimalTrial") or {}
     assignments = optimal.get("parameterAssignments") or []
-    best_params = {
-        str(item["name"]): float(item["value"]) for item in assignments
+    converters = {
+        "learning_rate": float,
+        "dropout_rate": float,
     }
+    best_params: dict[str, float] = {}
+    for item in assignments:
+        parameter_name = str(item["name"])
+        converter = converters.get(parameter_name)
+        if converter is None:
+            raise RuntimeError(
+                f"Katib experiment {name} returned unexpected parameter "
+                f"{parameter_name!r}"
+            )
+        try:
+            best_params[parameter_name] = converter(str(item["value"]))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Katib experiment {name} returned invalid floating-point "
+                f"value for {parameter_name}: {item.get('value')!r}"
+            ) from exc
+
+    missing_params = sorted(set(converters) - set(best_params))
+    if missing_params:
+        raise RuntimeError(
+            f"Katib experiment {name} succeeded without expected best params: "
+            f"{missing_params}"
+        )
+
     metrics_items = optimal.get("observation", {}).get("metrics", [])
     metrics: dict[str, float] = {}
     for item in metrics_items:
-        value = item.get("max") or item.get("latest") or item.get("min")
+        value = None
+        for field_name in ("max", "latest", "min"):
+            candidate = item.get(field_name)
+            if candidate is not None:
+                value = candidate
+                break
         if value is not None:
             metrics[str(item["name"])] = float(value)
 
-    if "learning_rate" not in best_params or "dropout_rate" not in best_params:
-        raise RuntimeError(
-            f"Katib experiment {name} succeeded without expected best params: "
-            f"{best_params}"
-        )
     if "val_auc" not in metrics:
         raise RuntimeError(
             f"Katib experiment {name} succeeded without val_auc: {metrics}"

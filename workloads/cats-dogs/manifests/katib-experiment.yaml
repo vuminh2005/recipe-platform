@@ -102,7 +102,7 @@ spec:
             containers:
               - name: training-container
 
-                image: docker.io/library/cats-dogs-trainer:0.4
+                image: docker.io/library/cats-dogs-trainer:0.5
                 imagePullPolicy: Never
 
                 command:

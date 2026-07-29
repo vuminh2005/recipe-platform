@@ -199,6 +199,46 @@ def get_or_register_model_version(
     )
 
 
+def build_version_tags(
+    *,
+    result: dict[str, Any],
+    platform_job_id: str,
+    mlflow_run_id: str,
+) -> dict[str, Any]:
+    return {
+        "platform.job_id": platform_job_id,
+        "platform.run_id": mlflow_run_id,
+        "platform.recipe_id": result.get("recipe_id", "cats-dogs"),
+        "platform.recipe_version": result.get("recipe_version", "1.0"),
+        "platform.katib_experiment_id": result.get(
+            "katib_experiment_id"
+        ),
+        "platform.lifecycle": "candidate",
+        "model.framework": "tensorflow_keras",
+        "model.task_type": "binary_image_classification",
+        "model.architecture": result.get(
+            "model_architecture",
+            "MobileNetV2",
+        ),
+        "inference.image_size": result.get("image_size"),
+        "inference.num_channels": result.get("num_channels", 3),
+        "inference.threshold": result.get("final_threshold"),
+        "inference.output": result.get("output_semantics", "prob_dog"),
+        "inference.preprocessing": result.get(
+            "preprocessing",
+            "embedded_mobilenet_v2",
+        ),
+        "metric.final_threshold": result.get("final_threshold"),
+        "metric.val_loss": result.get("val_loss"),
+        "metric.val_accuracy": result.get("val_accuracy"),
+        "metric.val_auc": result.get("val_auc"),
+        "metric.test_accuracy": result.get("test_accuracy"),
+        "metric.test_f1": result.get("test_f1"),
+        "metric.test_auc": result.get("test_auc"),
+        "metric.best_epoch": result.get("best_epoch"),
+    }
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -285,71 +325,11 @@ def main() -> None:
     # Model version-level metadata
     # ------------------------------------------------------------------
 
-    version_tags = {
-        "platform.job_id": platform_job_id,
-        "platform.run_id": mlflow_run_id,
-        "platform.lifecycle": "candidate",
-
-        "model.architecture": result.get(
-            "model_architecture",
-            "MobileNetV2",
-        ),
-
-        "inference.image_size": result.get(
-            "image_size"
-        ),
-
-        "inference.num_channels": result.get(
-            "num_channels",
-            3,
-        ),
-
-        "inference.threshold": result.get(
-            "final_threshold"
-        ),
-
-        "inference.output": result.get(
-            "output_semantics",
-            "prob_dog",
-        ),
-
-        "inference.preprocessing": result.get(
-            "preprocessing",
-            "embedded_mobilenet_v2",
-        ),
-
-        "metric.final_threshold": result.get(
-            "final_threshold"
-        ),
-
-        "metric.val_loss": result.get(
-            "val_loss"
-        ),
-
-        "metric.val_accuracy": result.get(
-            "val_accuracy"
-        ),
-
-        "metric.val_auc": result.get(
-            "val_auc"
-        ),
-
-        "metric.test_accuracy": result.get(
-            "test_accuracy"
-        ),
-
-        "metric.test_f1": result.get(
-            "test_f1"
-        ),
-
-        "metric.test_auc": result.get(
-            "test_auc"
-        ),
-
-        "metric.best_epoch": result.get(
-            "best_epoch"
-        ),
-    }
+    version_tags = build_version_tags(
+        result=result,
+        platform_job_id=str(platform_job_id),
+        mlflow_run_id=mlflow_run_id,
+    )
 
     for key, value in version_tags.items():
         set_version_tag_if_present(

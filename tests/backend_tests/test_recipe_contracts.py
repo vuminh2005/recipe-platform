@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from unittest.mock import Mock
 
 from pydantic import ValidationError
+from fastapi import HTTPException
 
 from backend.app.job_contracts import JobResponse, RecipeCreate
 from backend.app.main import create_job
@@ -335,6 +336,47 @@ class RecipeContractTests(unittest.TestCase):
 
         self.assertNotIn("recipe_id", response.recipe)
         self.assertEqual(response.result.objective.value, 0.9)
+
+    def test_canonical_validation_error_preserves_nested_location(self) -> None:
+        request = RecipeCreate(
+            name="invalid-tabular",
+            recipe_id="tabular-random-forest",
+            configuration={
+                "automl": {
+                    "max_trials": 1,
+                    "parallel_trials": 2,
+                }
+            },
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            create_job(request, db=Mock())
+
+        self.assertEqual(raised.exception.status_code, 422)
+        detail = raised.exception.detail
+        self.assertIsInstance(detail, list)
+        self.assertEqual(
+            detail[0]["loc"],
+            [
+                "body",
+                "configuration",
+                "automl",
+                "parallel_trials",
+            ],
+        )
+        self.assertIn("parallel_trials", detail[0]["msg"])
+
+    def test_non_pydantic_normalization_error_remains_readable_string(
+        self,
+    ) -> None:
+        request = RecipeCreate(
+            name="unknown-recipe",
+            recipe_id="unknown",
+        )
+        with self.assertRaises(HTTPException) as raised:
+            create_job(request, db=Mock())
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertIsInstance(raised.exception.detail, str)
 
 
 if __name__ == "__main__":

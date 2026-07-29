@@ -199,6 +199,22 @@ npm run dev
 ```
 
 The agent requires `BACKEND_URL`, `AGENT_TOKEN`, and `MLFLOW_TRACKING_URI`.
+Install its runtime dependencies only from the authoritative file:
+
+```bash
+python3 -m venv /tmp/recipe-platform-agent-venv
+/tmp/recipe-platform-agent-venv/bin/pip install -r agent/requirements.txt
+```
+
+Both Backend and Agent reject a missing, empty, or `development-token`
+`AGENT_TOKEN`. For isolated local development only, the insecure token can be
+enabled explicitly with `ALLOW_INSECURE_DEVELOPMENT_TOKEN=true`. Never use that
+switch for a shared demo, and never log or commit token values.
+
+The Backend has no end-user authentication or production rate limiting yet.
+Bind it to localhost or a trusted private network. If remote access is
+required, put authentication and network controls in front of it; CORS is not
+an authorization mechanism.
 Relevant optional settings include `AGENT_ID`, `KFP_ENDPOINT`,
 `KATIB_NAMESPACE`, `MLFLOW_EXPERIMENT_NAME`, `POLL_INTERVAL_SECONDS`, and
 `CATS_DOGS_PIPELINE_PATH`. The Hello handler also accepts
@@ -222,11 +238,13 @@ a wider deployment migration.
 
 ### Frontend validation and build
 
-The frontend is JavaScript/JSX, not TypeScript. No `tsc` or frontend test script
-is currently configured.
+The frontend is JavaScript/JSX, not TypeScript. It uses lightweight Node tests;
+no React DOM framework or `tsc` check is configured.
 
 ```bash
 cd frontend
+npm test
+RECIPE_PLATFORM_PYTHON=/tmp/recipe-platform-validation-venv/bin/python npm run test:catalog-contract
 npm run lint
 
 # Validate a production build without writing frontend/dist.
@@ -291,11 +309,25 @@ python -c "from kfp import compiler; from pipelines.cats_dogs_final_pipeline imp
 python -c "from kfp import compiler; from pipelines.tabular_random_forest_pipeline import tabular_random_forest_pipeline; compiler.Compiler().compile(pipeline_func=tabular_random_forest_pipeline,package_path='/tmp/tabular_random_forest_pipeline.yaml')"
 ```
 
-The Tabular package is intentionally versioned because the Agent submits it
-directly. Regenerate only that package after changing its Python source:
+All three compiled packages are intentionally versioned because the Agent
+submits them directly. Regenerate a package only from its corresponding source
+and verify it against a fresh `/tmp` compile:
 
 ```bash
+/tmp/recipe-platform-validation-venv/bin/python pipelines/hello_pipeline.py
+/tmp/recipe-platform-validation-venv/bin/python pipelines/cats_dogs_final_pipeline.py
 /tmp/recipe-platform-validation-venv/bin/python pipelines/tabular_random_forest_pipeline.py
+```
+
+The Cats & Dogs trainer image is
+`docker.io/library/cats-dogs-trainer:0.5`. Its Katib and KFP Pods use
+`imagePullPolicy: Never`, so build and import the exact tag before a live run:
+
+```bash
+docker build -t docker.io/library/cats-dogs-trainer:0.5 workloads/cats-dogs
+docker save -o /tmp/cats-dogs-trainer-0.5.tar docker.io/library/cats-dogs-trainer:0.5
+sudo k3s ctr images import /tmp/cats-dogs-trainer-0.5.tar
+sudo k3s ctr images list | grep -F docker.io/library/cats-dogs-trainer:0.5
 ```
 
 The Tabular trainer image is
@@ -318,3 +350,21 @@ python pipelines/run_hello_pipeline.py
 
 Pipeline compilation proves that the DSL is valid; it does not prove that
 images, secrets, datasets, Katib, KFP, or MLflow are available in K3s.
+
+### Safe demo rollout
+
+Deploy or restart the Backend before the Agent because current Agents publish
+incremental `result_patch` updates. A safe demo order is:
+
+1. Build and import Cats & Dogs `0.5` and Tabular `1.0` images.
+2. Verify all three tracked compiled pipeline packages.
+3. Configure a non-default `AGENT_TOKEN` on Backend and Agent.
+4. Start or deploy the Backend on localhost or a trusted private network.
+5. Confirm `/health`, `/api/recipes`, and the current OpenAPI contract.
+6. Start or restart the Agent.
+7. Run Hello, then AutoML-disabled jobs, then small AutoML-enabled jobs.
+
+Known deferred limitations include job leases/recovery, PostgreSQL concurrency
+redesign, distributed MLflow registration locking, full authentication/RBAC,
+production rate limiting, promotion, inference, serving, retraining, drift
+monitoring, custom recipes, arbitrary YAML, and dynamic plugins.

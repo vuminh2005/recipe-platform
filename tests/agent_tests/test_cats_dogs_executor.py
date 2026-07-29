@@ -7,7 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 from agent.cats_dogs_katib import CatsDogsKatibResult
-from agent.cats_dogs_executor import execute_cats_dogs_job
+from agent.cats_dogs_executor import (
+    _attach_kfp_lineage,
+    execute_cats_dogs_job,
+)
 
 
 FINAL_RUN = {
@@ -130,6 +133,8 @@ class CatsDogsExecutorTests(unittest.TestCase):
         arguments = kfp.submit_pipeline.call_args.kwargs["arguments"]
         self.assertEqual(arguments["learning_rate"], 0.0007)
         self.assertEqual(arguments["dropout_rate"], 0.3)
+        self.assertEqual(arguments["recipe_id"], "cats-dogs")
+        self.assertEqual(arguments["recipe_version"], "1.0")
         self.assertTrue(arguments["trainable_backbone"])
         self.assertEqual(
             arguments["katib_experiment_name"],
@@ -156,8 +161,6 @@ class CatsDogsExecutorTests(unittest.TestCase):
                         "best_params": {
                             "learning_rate": 0.0007,
                             "dropout_rate": 0.3,
-                            "best_trial_name": "best-trial",
-                            "katib_metrics": {"val_auc": 0.93},
                         },
                     },
                 ),
@@ -175,6 +178,11 @@ class CatsDogsExecutorTests(unittest.TestCase):
             "actual-cats-model-name",
         )
         mlflow.terminate_run.assert_called_with("parent-run", status="FINISHED")
+        mlflow.set_run_tag.assert_called_with(
+            run_id="final-run",
+            key="platform.kfp_run_id",
+            value="kfp-run",
+        )
 
     @patch("agent.cats_dogs_executor.KfpRunner")
     @patch("agent.cats_dogs_executor.KatibRunner")
@@ -299,6 +307,50 @@ class CatsDogsExecutorTests(unittest.TestCase):
         katib_class.assert_not_called()
         kfp_class.assert_not_called()
         build_manifest.assert_not_called()
+
+    @patch("agent.cats_dogs_executor.KfpRunner")
+    @patch("agent.cats_dogs_executor.KatibRunner")
+    @patch("agent.cats_dogs_executor.MlflowRestClient")
+    def test_explicit_unsupported_version_fails_before_integrations(
+        self,
+        mlflow_class,
+        katib_class,
+        kfp_class,
+    ) -> None:
+        self.base_job["recipe"]["recipe_version"] = "2.0"
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Unsupported Cats & Dogs recipe version",
+        ):
+            execute_cats_dogs_job(
+                self.base_job,
+                settings=self.settings,
+                backend=self.backend,
+            )
+
+        mlflow_class.assert_not_called()
+        katib_class.assert_not_called()
+        kfp_class.assert_not_called()
+
+    @patch("agent.cats_dogs_executor.time.sleep")
+    def test_kfp_lineage_failure_is_bounded_and_non_fatal(
+        self,
+        sleep,
+    ) -> None:
+        mlflow = Mock()
+        mlflow.set_run_tag.side_effect = RuntimeError("MLflow unavailable")
+
+        with self.assertLogs("cats_dogs_executor", level="ERROR"):
+            attached = _attach_kfp_lineage(
+                mlflow,
+                final_run=FINAL_RUN,
+                kfp_run_id="kfp-run",
+            )
+
+        self.assertFalse(attached)
+        self.assertEqual(mlflow.set_run_tag.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
 
 
 if __name__ == "__main__":

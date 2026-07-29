@@ -79,6 +79,13 @@ export function inferFailureStage(job, steps = getTimelineSteps(job)) {
   const presentation = getJobPresentation(job);
   const { externalIds, model, finalMetrics, bestParams } = presentation;
 
+  if (getRecipeId(job) === "hello") {
+    if (externalIds.kfp_run_id) {
+      return "RUNNING";
+    }
+    return job?.agent_id ? "CLAIMED" : "PENDING";
+  }
+
   if (
     externalIds.mlflow_run_id ||
     model ||

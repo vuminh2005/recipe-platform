@@ -52,7 +52,7 @@ class KatibManifestTests(unittest.TestCase):
         ).encode()
         self.assertEqual(
             hashlib.sha256(canonical).hexdigest(),
-            "8350a17445a1b36258d12410c81bd37742ff260825298600ddc06c393b42b8b4",
+            "399b872a65efa2dc2f6ca361bce71c485fcecf15b774ba787be88f779e7f78c6",
         )
 
     def test_configurable_fields_reach_the_manifest(self) -> None:
@@ -112,6 +112,74 @@ class KatibManifestTests(unittest.TestCase):
         self.assertEqual(result.best_params["learning_rate"], 0.0003)
         self.assertEqual(result.best_params["dropout_rate"], 0.25)
         self.assertEqual(result.best_metric, 0.91)
+
+    def test_result_parser_preserves_zero_objective(self) -> None:
+        result = parse_experiment_result(
+            {
+                "metadata": {"name": "zero-objective"},
+                "status": {
+                    "currentOptimalTrial": {
+                        "parameterAssignments": [
+                            {"name": "learning_rate", "value": "0.0003"},
+                            {"name": "dropout_rate", "value": "0.25"},
+                        ],
+                        "observation": {
+                            "metrics": [{"name": "val_auc", "max": 0.0}]
+                        },
+                    }
+                },
+            }
+        )
+        self.assertEqual(result.best_metric, 0.0)
+
+    def test_result_parser_rejects_missing_objective(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "without val_auc"):
+            parse_experiment_result(
+                {
+                    "metadata": {"name": "missing-objective"},
+                    "status": {
+                        "currentOptimalTrial": {
+                            "parameterAssignments": [
+                                {"name": "learning_rate", "value": "0.0003"},
+                                {"name": "dropout_rate", "value": "0.25"},
+                            ],
+                            "observation": {"metrics": []},
+                        }
+                    },
+                }
+            )
+
+    def test_result_parser_rejects_unexpected_assignment(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "unexpected parameter"):
+            parse_experiment_result(
+                {
+                    "metadata": {"name": "unexpected"},
+                    "status": {
+                        "currentOptimalTrial": {
+                            "parameterAssignments": [
+                                {"name": "learning_rate", "value": "0.0003"},
+                                {"name": "dropout_rate", "value": "0.25"},
+                                {"name": "momentum", "value": "0.9"},
+                            ]
+                        }
+                    },
+                }
+            )
+
+    def test_result_parser_rejects_missing_assignment(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "dropout_rate"):
+            parse_experiment_result(
+                {
+                    "metadata": {"name": "missing-assignment"},
+                    "status": {
+                        "currentOptimalTrial": {
+                            "parameterAssignments": [
+                                {"name": "learning_rate", "value": "0.0003"}
+                            ]
+                        }
+                    },
+                }
+            )
 
 
 if __name__ == "__main__":

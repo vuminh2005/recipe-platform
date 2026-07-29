@@ -4,9 +4,15 @@ import {
   toNumber,
   valueOrDefault,
 } from "./formValues.js";
+import { validateRecipeDefinition } from "./recipeCatalog.js";
 
 function assertCatsDogsRecipe(recipe) {
-  if (recipe?.recipe_id !== "cats-dogs" || !recipe.version) {
+  const validationError = validateRecipeDefinition(recipe);
+  if (
+    recipe?.recipe_id !== "cats-dogs" ||
+    !recipe.version ||
+    validationError
+  ) {
     throw new Error("A valid Cats & Dogs catalog definition is required.");
   }
 }

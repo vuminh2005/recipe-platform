@@ -11,6 +11,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -165,11 +166,17 @@ class AutoMLConfig(BaseModel):
         default_factory=CatsDogsSearchSpace,
     )
 
-    @model_validator(mode="after")
-    def validate_parallel_trials(self) -> "AutoMLConfig":
-        if self.parallel_trials > self.max_trials:
+    @field_validator("parallel_trials")
+    @classmethod
+    def validate_parallel_trials(
+        cls,
+        value: int,
+        info: ValidationInfo,
+    ) -> int:
+        max_trials = info.data.get("max_trials")
+        if max_trials is not None and value > max_trials:
             raise ValueError("parallel_trials must be less than or equal to max_trials")
-        return self
+        return value
 
 
 class CatsDogsConfiguration(BaseModel):
@@ -252,13 +259,19 @@ class TabularRandomForestAutoMLConfig(BaseModel):
         default_factory=TabularRandomForestSearchSpace
     )
 
-    @model_validator(mode="after")
-    def validate_parallel_trials(self) -> "TabularRandomForestAutoMLConfig":
-        if self.parallel_trials > self.max_trials:
+    @field_validator("parallel_trials")
+    @classmethod
+    def validate_parallel_trials(
+        cls,
+        value: int,
+        info: ValidationInfo,
+    ) -> int:
+        max_trials = info.data.get("max_trials")
+        if max_trials is not None and value > max_trials:
             raise ValueError(
                 "parallel_trials must be less than or equal to max_trials"
             )
-        return self
+        return value
 
 
 class TabularRandomForestConfiguration(BaseModel):

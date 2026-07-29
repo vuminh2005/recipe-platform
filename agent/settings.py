@@ -12,6 +12,25 @@ def required_env(name: str) -> str:
     return value
 
 
+def required_agent_token() -> str:
+    token = os.getenv("AGENT_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError(
+            "AGENT_TOKEN must be configured before the Agent starts"
+        )
+    allow_insecure = (
+        os.getenv("ALLOW_INSECURE_DEVELOPMENT_TOKEN", "").strip().lower()
+        == "true"
+    )
+    if token == "development-token" and not allow_insecure:
+        raise RuntimeError(
+            "AGENT_TOKEN must not use the insecure development token; "
+            "set a secure token or explicitly set "
+            "ALLOW_INSECURE_DEVELOPMENT_TOKEN=true for local development"
+        )
+    return token
+
+
 @dataclass(frozen=True)
 class CatsDogsSettings:
     pipeline_path: Path
@@ -49,7 +68,7 @@ class Settings:
         return cls(
             backend_url=required_env("BACKEND_URL").rstrip("/"),
             agent_id=os.getenv("AGENT_ID", "laptop-k3s-agent"),
-            agent_token=required_env("AGENT_TOKEN"),
+            agent_token=required_agent_token(),
             kfp_endpoint=os.getenv("KFP_ENDPOINT", "http://127.0.0.1:8080"),
             poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "10")),
             mlflow_tracking_uri=required_env("MLFLOW_TRACKING_URI").rstrip("/"),

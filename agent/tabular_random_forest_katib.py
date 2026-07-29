@@ -287,7 +287,12 @@ def parse_experiment_result(
 
     metrics: dict[str, float] = {}
     for item in optimal.get("observation", {}).get("metrics", []):
-        value = item.get("max") or item.get("latest") or item.get("min")
+        value = None
+        for field_name in ("max", "latest", "min"):
+            candidate = item.get(field_name)
+            if candidate is not None:
+                value = candidate
+                break
         if value is not None:
             metrics[str(item["name"])] = float(value)
     if OBJECTIVE_METRIC not in metrics:

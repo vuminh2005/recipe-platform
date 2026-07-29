@@ -116,6 +116,33 @@ class RegisterModelIdempotencyTests(unittest.TestCase):
             await_registration_for=300,
         )
 
+    def test_version_tags_include_platform_lineage(self) -> None:
+        tags = REGISTER_MODEL.build_version_tags(
+            result={
+                "recipe_id": "cats-dogs",
+                "recipe_version": "1.0",
+                "katib_experiment_id": "cats-dogs-hpo-12345678",
+                "model_architecture": "MobileNetV2",
+            },
+            platform_job_id="job-1",
+            mlflow_run_id="run-1",
+        )
+
+        self.assertEqual(tags["platform.job_id"], "job-1")
+        self.assertEqual(tags["platform.run_id"], "run-1")
+        self.assertEqual(tags["platform.recipe_id"], "cats-dogs")
+        self.assertEqual(tags["platform.recipe_version"], "1.0")
+        self.assertEqual(
+            tags["platform.katib_experiment_id"],
+            "cats-dogs-hpo-12345678",
+        )
+        self.assertEqual(tags["model.framework"], "tensorflow_keras")
+        self.assertEqual(
+            tags["model.task_type"],
+            "binary_image_classification",
+        )
+        self.assertEqual(tags["model.architecture"], "MobileNetV2")
+
 
 if __name__ == "__main__":
     unittest.main()

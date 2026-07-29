@@ -4,7 +4,7 @@ from kfp import compiler, dsl, kubernetes
 from kfp.dsl import OutputPath
 
 
-TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.4"
+TRAINER_IMAGE = "docker.io/library/cats-dogs-trainer:0.5"
 PLATFORM_SECRET = "cats-dogs-platform-secrets"
 
 SECRET_ENV = {
@@ -36,6 +36,8 @@ def validate_dataset(
 @dsl.container_component
 def final_train_and_evaluate(
     platform_job_id: str,
+    recipe_id: str,
+    recipe_version: str,
     mlflow_parent_run_id: str,
     katib_experiment_name: str,
     learning_rate: float,
@@ -70,6 +72,10 @@ exec python -m trainer.train "$@"
             katib_experiment_name,
 
             "--mode=final",
+            "--recipe-id",
+            recipe_id,
+            "--recipe-version",
+            recipe_version,
 
             "--learning-rate",
             learning_rate,
@@ -154,6 +160,8 @@ def configure_local_task(
 )
 def cats_dogs_final_pipeline(
     platform_job_id: str = "manual-final-001",
+    recipe_id: str = "cats-dogs",
+    recipe_version: str = "1.0",
     mlflow_parent_run_id: str = "",
     katib_experiment_name: str = "cats-dogs-mobilenet-tuning",
     learning_rate: float = 0.0003,
@@ -184,6 +192,8 @@ def cats_dogs_final_pipeline(
     train_task = configure_local_task(
         final_train_and_evaluate(
             platform_job_id=platform_job_id,
+            recipe_id=recipe_id,
+            recipe_version=recipe_version,
             mlflow_parent_run_id=mlflow_parent_run_id,
             katib_experiment_name=katib_experiment_name,
             learning_rate=learning_rate,

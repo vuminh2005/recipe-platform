@@ -3,6 +3,34 @@ const SUPPORTED_RENDERER_IDS = new Set([
   "tabular-random-forest",
 ]);
 
+const RENDERER_REQUIREMENTS = {
+  "cats-dogs": {
+    training: [
+      "image_size",
+      "trial_epochs",
+      "final_epochs",
+      "batch_size",
+      "dense_units",
+      "trainable_backbone",
+    ],
+    automl: ["enabled", "max_trials", "parallel_trials", "algorithm"],
+    searchSpace: ["learning_rate", "dropout_rate"],
+    effectiveParameters: ["learning_rate", "dropout_rate"],
+  },
+  "tabular-random-forest": {
+    training: ["random_seed"],
+    automl: ["enabled", "max_trials", "parallel_trials", "algorithm"],
+    searchSpace: ["n_estimators", "max_depth", "min_samples_split"],
+    effectiveParameters: [
+      "n_estimators",
+      "max_depth",
+      "min_samples_split",
+      "max_features",
+      "random_seed",
+    ],
+  },
+};
+
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -28,6 +56,84 @@ function validateFieldDefinitions(fields) {
         Object.hasOwn(field, "default"),
     )
   );
+}
+
+function missingFieldNames(fields, requiredNames) {
+  const names = new Set(fields.map((field) => field.name));
+  return requiredNames.filter((name) => !names.has(name));
+}
+
+function missingObjectKeys(value, requiredNames) {
+  if (!isRecord(value)) {
+    return [...requiredNames];
+  }
+  return requiredNames.filter((name) => !Object.hasOwn(value, name));
+}
+
+function validateRendererRequirements(recipe) {
+  const requirements = RENDERER_REQUIREMENTS[recipe.recipe_id];
+  if (!requirements) {
+    return "This dashboard version has no renderer for the recipe.";
+  }
+
+  if (!hasString(recipe.framework) || !hasString(recipe.model)) {
+    return "Framework and model metadata are required by this renderer.";
+  }
+
+  const sections = [
+    ["training", recipe.configurable_training_fields, requirements.training],
+    ["AutoML", recipe.configurable_automl_fields, requirements.automl],
+    [
+      "search-space",
+      recipe.configurable_search_space,
+      requirements.searchSpace,
+    ],
+  ];
+  for (const [label, fields, requiredNames] of sections) {
+    const missing = missingFieldNames(fields, requiredNames);
+    if (missing.length > 0) {
+      return `Missing required ${label} metadata: ${missing.join(", ")}.`;
+    }
+  }
+
+  const defaults = recipe.default_configuration;
+  const missingTraining = missingObjectKeys(
+    defaults.training,
+    requirements.training,
+  );
+  const missingAutoml = missingObjectKeys(defaults.automl, requirements.automl);
+  const missingSearch = missingObjectKeys(
+    defaults.automl?.search_space,
+    requirements.searchSpace,
+  );
+  const missingEffective = missingObjectKeys(
+    defaults.effective_final_parameters,
+    requirements.effectiveParameters,
+  );
+  if (
+    missingTraining.length ||
+    missingAutoml.length ||
+    missingSearch.length ||
+    missingEffective.length
+  ) {
+    return "Default configuration is incomplete for this renderer.";
+  }
+
+  const algorithm = defaults.automl.algorithm;
+  const algorithmField = recipe.configurable_automl_fields.find(
+    (field) => field.name === "algorithm",
+  );
+  const optionValues = new Set(
+    (algorithmField?.options || []).map((option) => option.value),
+  );
+  if (
+    !recipe.supported_algorithms.includes(algorithm) ||
+    !optionValues.has(algorithm)
+  ) {
+    return "Algorithm defaults and options are inconsistent.";
+  }
+
+  return "";
 }
 
 export function validateRecipeDefinition(recipe) {
@@ -88,7 +194,7 @@ export function validateRecipeDefinition(recipe) {
     return "Configurable field metadata is malformed.";
   }
 
-  return "";
+  return validateRendererRequirements(recipe);
 }
 
 export function prepareRecipeCatalog(payload) {
@@ -101,10 +207,31 @@ export function prepareRecipeCatalog(payload) {
 
   const recipes = [];
   const issues = [];
-  const seenIds = new Set();
+  const publicRecipes = payload.filter(
+    (recipe) => recipe?.visibility === "public",
+  );
+  const identityCounts = new Map();
+  for (const recipe of publicRecipes) {
+    if (hasString(recipe?.recipe_id)) {
+      identityCounts.set(
+        recipe.recipe_id,
+        (identityCounts.get(recipe.recipe_id) || 0) + 1,
+      );
+    }
+  }
+  const duplicateIds = new Set(
+    [...identityCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([recipeId]) => recipeId),
+  );
+  const reportedDuplicates = new Set();
 
-  for (const recipe of payload) {
-    if (recipe?.visibility !== "public") {
+  for (const recipe of publicRecipes) {
+    if (duplicateIds.has(recipe?.recipe_id)) {
+      if (!reportedDuplicates.has(recipe.recipe_id)) {
+        issues.push(`${recipe.recipe_id}: Duplicate recipe definition.`);
+        reportedDuplicates.add(recipe.recipe_id);
+      }
       continue;
     }
 
@@ -116,12 +243,6 @@ export function prepareRecipeCatalog(payload) {
       continue;
     }
 
-    if (seenIds.has(recipe.recipe_id)) {
-      issues.push(`${recipe.recipe_id}: Duplicate recipe definition.`);
-      continue;
-    }
-
-    seenIds.add(recipe.recipe_id);
     recipes.push(recipe);
   }
 

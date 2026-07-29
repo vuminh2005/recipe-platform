@@ -54,3 +54,23 @@ test("rejects non-integer Tabular search endpoints", () => {
     /must be an integer/,
   );
 });
+
+test("rejects an incomplete Tabular catalog definition", () => {
+  const incomplete = structuredClone(tabularRecipe);
+  incomplete.configurable_automl_fields =
+    incomplete.configurable_automl_fields.filter(
+      (field) => field.name !== "algorithm",
+    );
+
+  assert.throws(
+    () =>
+      buildTabularRandomForestJobPayload(
+        {
+          name: "invalid-catalog",
+          configuration: structuredClone(incomplete.default_configuration),
+        },
+        incomplete,
+      ),
+    /valid Tabular Random Forest catalog definition/,
+  );
+});

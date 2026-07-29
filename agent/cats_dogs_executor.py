@@ -13,6 +13,7 @@ from agent.cats_dogs_katib import (
 from agent.katib_runner import KatibRunner
 from agent.kfp_runner import KfpRunner
 from agent.mlflow_rest import MlflowRestClient
+from agent.recipe_ids import CATS_DOGS_RECIPE_ID
 from agent.settings import Settings
 
 LOGGER = logging.getLogger("cats_dogs_executor")
@@ -26,6 +27,24 @@ DEFAULT_DROPOUT_RATE_MAX = 0.45
 FINAL_RUN_ROLE = "final_training"
 FINAL_LOGGED_RESULT = "final_model_logged"
 FINAL_REGISTERED_RESULT = "final_model_registered"
+RECIPE_VERSION = "1.0"
+LINEAGE_UPDATE_ATTEMPTS = 3
+LINEAGE_UPDATE_RETRY_SECONDS = 1
+
+
+def _recipe_version(job: dict[str, Any]) -> str:
+    recipe = job.get("recipe")
+    if not isinstance(recipe, dict):
+        raise ValueError("Job recipe must be an object")
+    value = recipe.get("recipe_version")
+    if value is None:
+        return RECIPE_VERSION
+    if value != RECIPE_VERSION:
+        raise ValueError(
+            f"Unsupported Cats & Dogs recipe version {value!r}; "
+            f"supported: {RECIPE_VERSION}"
+        )
+    return str(value)
 
 
 def _recipe_sections(
@@ -133,6 +152,61 @@ def _wait_for_registered_final_run(
         f"Final registered MLflow run not found for job {platform_job_id}; "
         f"last_run={last_run}"
     )
+
+
+def _attach_kfp_lineage(
+    mlflow: MlflowRestClient,
+    *,
+    final_run: dict[str, Any],
+    kfp_run_id: str,
+) -> bool:
+    tags = final_run["tags"]
+    run_id = str(final_run["run_id"])
+    model_name = str(tags["platform.registered_model_name"])
+    model_version = str(tags["platform.registered_model_version"])
+    last_error: Exception | None = None
+
+    for attempt in range(1, LINEAGE_UPDATE_ATTEMPTS + 1):
+        try:
+            mlflow.set_run_tag(
+                run_id=run_id,
+                key="platform.kfp_run_id",
+                value=kfp_run_id,
+            )
+            mlflow.set_model_version_tag(
+                name=model_name,
+                version=model_version,
+                key="platform.kfp_run_id",
+                value=kfp_run_id,
+            )
+            LOGGER.info(
+                "Attached KFP run %s to MLflow run %s and model %s/%s",
+                kfp_run_id,
+                run_id,
+                model_name,
+                model_version,
+            )
+            return True
+        except Exception as exc:
+            last_error = exc
+            LOGGER.warning(
+                "Could not attach Cats & Dogs KFP lineage on attempt %d/%d: %s",
+                attempt,
+                LINEAGE_UPDATE_ATTEMPTS,
+                exc,
+            )
+            if attempt < LINEAGE_UPDATE_ATTEMPTS:
+                time.sleep(LINEAGE_UPDATE_RETRY_SECONDS)
+
+    LOGGER.error(
+        "Training and registration succeeded, but KFP run %s could not be "
+        "attached to Cats & Dogs MLflow metadata after %d attempts. The "
+        "backend KFP ID remains canonical. Last error: %s",
+        kfp_run_id,
+        LINEAGE_UPDATE_ATTEMPTS,
+        last_error,
+    )
+    return False
 
 
 def _validate_execution_config(
@@ -252,6 +326,7 @@ def execute_cats_dogs_job(
     job_id = str(job["id"])
     training, automl, configuration = _recipe_sections(job)
     try:
+        recipe_version = _recipe_version(job)
         execution_config = _validate_execution_config(
             training,
             automl,
@@ -305,6 +380,13 @@ def execute_cats_dogs_job(
             and existing_final["tags"].get("platform.result")
             == FINAL_REGISTERED_RESULT
         ):
+            existing_kfp_run_id = job.get("kfp_run_id")
+            if existing_kfp_run_id:
+                _attach_kfp_lineage(
+                    mlflow,
+                    final_run=existing_final,
+                    kfp_run_id=str(existing_kfp_run_id),
+                )
             backend.patch_job(
                 job_id,
                 status="SUCCEEDED",
@@ -354,12 +436,14 @@ def execute_cats_dogs_job(
             katib_result = parse_experiment_result(katib_experiment)
             learning_rate = katib_result.best_params["learning_rate"]
             dropout_rate = katib_result.best_params["dropout_rate"]
-            best_params = {
-                "learning_rate": learning_rate,
-                "dropout_rate": dropout_rate,
-                "best_trial_name": katib_result.best_trial_name,
-                "katib_metrics": katib_result.metrics,
-            }
+            best_params = dict(katib_result.best_params)
+            LOGGER.info(
+                "Katib best trial for job %s: trial=%s params=%s metrics=%s",
+                job_id,
+                katib_result.best_trial_name,
+                best_params,
+                katib_result.metrics,
+            )
             backend.patch_job(
                 job_id,
                 status="TRAINING",
@@ -381,6 +465,8 @@ def execute_cats_dogs_job(
                 run_name=f"cats-dogs-final-{job_id[:8]}",
                 arguments={
                     "platform_job_id": job_id,
+                    "recipe_id": CATS_DOGS_RECIPE_ID,
+                    "recipe_version": recipe_version,
                     "mlflow_parent_run_id": str(parent_run_id),
                     "katib_experiment_name": katib_name,
                     "learning_rate": learning_rate,
@@ -438,6 +524,11 @@ def execute_cats_dogs_job(
             experiment_id=experiment_id,
             platform_job_id=job_id,
             timeout_seconds=300,
+        )
+        _attach_kfp_lineage(
+            mlflow,
+            final_run=final_run,
+            kfp_run_id=str(kfp_run_id),
         )
         backend.patch_job(
             job_id,

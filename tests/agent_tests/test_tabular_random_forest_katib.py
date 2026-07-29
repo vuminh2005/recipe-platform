@@ -150,6 +150,76 @@ class TabularKatibTests(unittest.TestCase):
                 }
             )
 
+    def test_parser_preserves_zero_objective(self) -> None:
+        result = parse_experiment_result(
+            {
+                "metadata": {"name": "zero-objective"},
+                "status": {
+                    "currentOptimalTrial": {
+                        "parameterAssignments": [
+                            {"name": "n_estimators", "value": "100"},
+                            {"name": "max_depth", "value": "8"},
+                            {"name": "min_samples_split", "value": "2"},
+                        ],
+                        "observation": {
+                            "metrics": [{"name": "val_f1", "max": 0.0}]
+                        },
+                    }
+                },
+            }
+        )
+        self.assertEqual(result.best_metric, 0.0)
+
+    def test_parser_rejects_missing_objective(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "without val_f1"):
+            parse_experiment_result(
+                {
+                    "metadata": {"name": "missing-objective"},
+                    "status": {
+                        "currentOptimalTrial": {
+                            "parameterAssignments": [
+                                {"name": "n_estimators", "value": "100"},
+                                {"name": "max_depth", "value": "8"},
+                                {
+                                    "name": "min_samples_split",
+                                    "value": "2",
+                                },
+                            ],
+                            "observation": {"metrics": []},
+                        }
+                    },
+                }
+            )
+
+    def test_parser_rejects_unexpected_and_missing_parameters(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "unexpected parameter"):
+            parse_experiment_result(
+                {
+                    "metadata": {"name": "unexpected"},
+                    "status": {
+                        "currentOptimalTrial": {
+                            "parameterAssignments": [
+                                {"name": "unexpected", "value": "1"}
+                            ]
+                        }
+                    },
+                }
+            )
+        with self.assertRaisesRegex(RuntimeError, "min_samples_split"):
+            parse_experiment_result(
+                {
+                    "metadata": {"name": "missing"},
+                    "status": {
+                        "currentOptimalTrial": {
+                            "parameterAssignments": [
+                                {"name": "n_estimators", "value": "100"},
+                                {"name": "max_depth", "value": "8"},
+                            ]
+                        }
+                    },
+                }
+            )
+
     def test_generic_katib_runner_has_no_tabular_assumptions(self) -> None:
         source = inspect.getsource(generic_katib)
         for forbidden in (

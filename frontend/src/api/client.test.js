@@ -42,3 +42,34 @@ test("keeps backend normalization string details readable", () => {
     "parallel_trials must be less than or equal to max_trials",
   );
 });
+
+test("adapts multiple structured recipe validation issues", () => {
+  const parsed = parseApiError(
+    {
+      detail: [
+        {
+          loc: ["body", "configuration", "training", "random_seed"],
+          msg: "Input should be greater than or equal to 0",
+        },
+        {
+          loc: [
+            "body",
+            "configuration",
+            "automl",
+            "parallel_trials",
+          ],
+          msg: "parallel_trials must be less than or equal to max_trials",
+        },
+      ],
+    },
+    422,
+  );
+
+  assert.deepEqual(
+    parsed.issues.map((issue) => issue.path),
+    [
+      "configuration.training.random_seed",
+      "configuration.automl.parallel_trials",
+    ],
+  );
+});

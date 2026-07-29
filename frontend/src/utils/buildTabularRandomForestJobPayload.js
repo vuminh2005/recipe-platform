@@ -3,9 +3,15 @@ import {
   toInteger,
   valueOrDefault,
 } from "./formValues.js";
+import { validateRecipeDefinition } from "./recipeCatalog.js";
 
 function assertTabularRecipe(recipe) {
-  if (recipe?.recipe_id !== "tabular-random-forest" || !recipe.version) {
+  const validationError = validateRecipeDefinition(recipe);
+  if (
+    recipe?.recipe_id !== "tabular-random-forest" ||
+    !recipe.version ||
+    validationError
+  ) {
     throw new Error(
       "A valid Tabular Random Forest catalog definition is required.",
     );

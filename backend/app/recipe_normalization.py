@@ -31,7 +31,37 @@ from .recipe_catalog import (
 
 
 class RecipeNormalizationError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        detail: str | list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.detail = detail if detail is not None else message
+
+
+def _structured_validation_error(
+    error: ValidationError,
+) -> RecipeNormalizationError:
+    detail = []
+    for item in error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    ):
+        detail.append(
+            {
+                "type": item["type"],
+                "loc": [
+                    "body",
+                    "configuration",
+                    *item.get("loc", ()),
+                ],
+                "msg": item["msg"],
+            }
+        )
+    return RecipeNormalizationError(str(error), detail=detail)
 
 
 def resolve_request_recipe_id(request: RecipeCreate) -> str:
@@ -139,7 +169,7 @@ def _cats_dogs_configuration(request: RecipeCreate) -> dict[str, Any]:
                 automl=automl,
             )
     except ValidationError as exc:
-        raise RecipeNormalizationError(str(exc)) from exc
+        raise _structured_validation_error(exc) from exc
 
     training_values = parsed.training.model_dump(mode="json")
     # Accepted for compatibility, but it does not affect execution or snapshots.
@@ -178,7 +208,7 @@ def _hello_configuration(request: RecipeCreate) -> dict[str, Any]:
         try:
             HelloConfiguration.model_validate(request.configuration)
         except ValidationError as exc:
-            raise RecipeNormalizationError(str(exc)) from exc
+            raise _structured_validation_error(exc) from exc
     elif request.recipe_id is not None and supplied_legacy_fields:
         raise RecipeNormalizationError(
             "The Hello smoke recipe does not accept training or AutoML fields"
@@ -210,7 +240,7 @@ def _tabular_random_forest_configuration(
             request.configuration or {}
         )
     except ValidationError as exc:
-        raise RecipeNormalizationError(str(exc)) from exc
+        raise _structured_validation_error(exc) from exc
 
     training_values = parsed.training.model_dump(mode="json")
     automl_values = parsed.automl.model_dump(mode="json")

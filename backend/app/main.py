@@ -40,7 +40,7 @@ DATABASE_URL = os.getenv(
     "sqlite:///./recipe_platform.db",
 )
 
-AGENT_TOKEN = os.getenv("AGENT_TOKEN", "development-token")
+AGENT_TOKEN = os.getenv("AGENT_TOKEN", "").strip()
 
 CORS_ORIGINS = [
     origin.strip()
@@ -177,8 +177,26 @@ def verify_agent_token(
         )
 
 
+def validate_agent_token_configuration() -> None:
+    if not AGENT_TOKEN:
+        raise RuntimeError(
+            "AGENT_TOKEN must be configured before the Backend starts"
+        )
+    allow_insecure = (
+        os.getenv("ALLOW_INSECURE_DEVELOPMENT_TOKEN", "").strip().lower()
+        == "true"
+    )
+    if AGENT_TOKEN == "development-token" and not allow_insecure:
+        raise RuntimeError(
+            "AGENT_TOKEN must not use the insecure development token; "
+            "set a secure token or explicitly set "
+            "ALLOW_INSECURE_DEVELOPMENT_TOKEN=true for local development"
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_agent_token_configuration()
     Base.metadata.create_all(engine)
     yield
 
@@ -215,7 +233,7 @@ def create_job(
     try:
         recipe_payload = normalize_recipe_request(recipe)
     except RecipeNormalizationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
 
     job = Job(
         recipe=recipe_payload,
